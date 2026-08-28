@@ -23,6 +23,7 @@ import {
   upsertAccount
 } from "./db.js";
 import { importAccountContent } from "./ingest.js";
+import { privacyPolicyHtml, termsOfServiceHtml } from "./legal.js";
 import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, parseWebhook, replyToComment, sendMessage } from "./meta.js";
 import { validateDraft } from "./policy.js";
 import { generateBrandProfile } from "./profile.js";
@@ -184,6 +185,8 @@ app.post("/api/profile/generate", async (_req, res) => {
 const panelDist = resolve(dirname(fileURLToPath(import.meta.url)), "../panel/dist");
 app.use("/panel", express.static(panelDist));
 app.get("/", (_req, res) => res.redirect("/panel/"));
+app.get("/privacy", (_req, res) => res.type("html").send(privacyPolicyHtml));
+app.get("/terms", (_req, res) => res.type("html").send(termsOfServiceHtml));
 
 function hasValidMetaSignature(req: RequestWithRawBody) {
   if (!config.META_APP_SECRET || !req.rawBody) return false;

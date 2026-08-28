@@ -25,7 +25,7 @@ app.get("/auth/instagram/start", (_req, res) => {
 
 app.get("/auth/instagram/callback", async (req, res) => {
   const { code, state, error } = req.query;
-  if (error) return res.status(400).send(`Meta authorization was declined: ${error}`);
+  if (error) return res.status(400).type("text/plain").send(`Meta authorization was declined: ${String(error)}`);
   if (typeof code !== "string" || typeof state !== "string" || !oauthStates.delete(state)) return res.status(400).send("Invalid or expired OAuth state.");
   try {
     const token = await exchangeCode(code);

@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InstagramAccounts from "@/components/panel/InstagramAccounts";
 import ProfileBuilder from "@/components/panel/ProfileBuilder";
+import ReviewQueue from "@/components/panel/ReviewQueue";
 import SettingsForm from "@/components/panel/SettingsForm";
 import { api, getAdminKey, setAdminKey } from "@/lib/api";
 
@@ -108,12 +109,16 @@ const App = () => {
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
-        <Tabs defaultValue="settings">
+        <Tabs defaultValue="inbox">
           <TabsList className="mb-8">
+            <TabsTrigger value="inbox">Skrzynka</TabsTrigger>
             <TabsTrigger value="settings">Ustawienia</TabsTrigger>
             <TabsTrigger value="account">Konto Instagram</TabsTrigger>
             <TabsTrigger value="profile">Profil komunikacji</TabsTrigger>
           </TabsList>
+          <TabsContent value="inbox">
+            <ReviewQueue />
+          </TabsContent>
           <TabsContent value="settings">
             <SettingsForm />
           </TabsContent>

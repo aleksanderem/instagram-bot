@@ -183,6 +183,7 @@ app.post("/api/profile/generate", async (_req, res) => {
 
 const panelDist = resolve(dirname(fileURLToPath(import.meta.url)), "../panel/dist");
 app.use("/panel", express.static(panelDist));
+app.get("/", (_req, res) => res.redirect("/panel/"));
 
 function hasValidMetaSignature(req: RequestWithRawBody) {
   if (!config.META_APP_SECRET || !req.rawBody) return false;

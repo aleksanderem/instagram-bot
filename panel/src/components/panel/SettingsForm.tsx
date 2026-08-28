@@ -17,14 +17,18 @@ const SettingsForm = () => {
   const [model, setModel] = useState("");
   const [accountIds, setAccountIds] = useState("");
   const [toneNotes, setToneNotes] = useState("");
+  const [respondToDms, setRespondToDms] = useState(true);
+  const [respondToComments, setRespondToComments] = useState(true);
 
   useEffect(() => {
     api<SettingsResponse>("/api/settings")
       .then(({ effective }) => {
         setAutoSend(effective.autoSendConfidentDrafts);
-        setModel(effective.openaiModel);
+        setModel(effective.aiModel);
         setAccountIds(effective.allowedInstagramAccountIds.join(", "));
         setToneNotes(effective.toneNotes);
+        setRespondToDms(effective.respondToDms);
+        setRespondToComments(effective.respondToComments);
       })
       .catch((error: Error) => toast.error(error.message))
       .finally(() => setLoading(false));
@@ -38,9 +42,11 @@ const SettingsForm = () => {
         method: "PUT",
         body: JSON.stringify({
           autoSendConfidentDrafts: autoSend,
-          openaiModel: model.trim(),
+          aiModel: model.trim(),
           allowedInstagramAccountIds: accountIds.split(",").map((id) => id.trim()).filter(Boolean),
-          toneNotes
+          toneNotes,
+          respondToDms,
+          respondToComments
         })
       });
       toast.success("Ustawienia zapisane.");
@@ -66,7 +72,7 @@ const SettingsForm = () => {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
           <div className="flex flex-col items-start gap-2">
-            <Label htmlFor="model">Model AI</Label>
+            <Label htmlFor="model">Model AI (MiniMax)</Label>
             <div className="relative w-full">
               <Input id="model" value={model} onChange={(e) => setModel(e.target.value)} className="peer pr-9" />
               <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3 peer-disabled:opacity-50">
@@ -74,7 +80,25 @@ const SettingsForm = () => {
                 <span className="sr-only">Model AI</span>
               </div>
             </div>
-            <p className="text-muted-foreground text-xs">Nazwa modelu OpenAI używanego do szkiców odpowiedzi</p>
+            <p className="text-muted-foreground text-xs">Nazwa modelu MiniMax używanego do szkiców odpowiedzi (np. MiniMax-M3)</p>
+          </div>
+
+          <div className="flex flex-col items-start gap-2">
+            <Label htmlFor="respond-dms">Odpowiadaj na wiadomości (DM)</Label>
+            <div className="flex h-9 items-center gap-3">
+              <Switch id="respond-dms" checked={respondToDms} onCheckedChange={setRespondToDms} />
+              <span className="text-sm">{respondToDms ? "Tak" : "Nie"}</span>
+            </div>
+            <p className="text-muted-foreground text-xs">Bot przygotowuje odpowiedzi na wiadomości prywatne</p>
+          </div>
+
+          <div className="flex flex-col items-start gap-2">
+            <Label htmlFor="respond-comments">Odpowiadaj na komentarze</Label>
+            <div className="flex h-9 items-center gap-3">
+              <Switch id="respond-comments" checked={respondToComments} onCheckedChange={setRespondToComments} />
+              <span className="text-sm">{respondToComments ? "Tak" : "Nie"}</span>
+            </div>
+            <p className="text-muted-foreground text-xs">Bot przygotowuje odpowiedzi w wątkach komentarzy</p>
           </div>
 
           <div className="flex flex-col items-start gap-2">

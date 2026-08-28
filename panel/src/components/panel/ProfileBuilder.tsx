@@ -2,12 +2,20 @@ import { useEffect, useState } from "react";
 import { SparklesIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { api, type Sample } from "@/lib/api";
+
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "ręcznie",
+  "instagram-post": "post",
+  "instagram-dm": "DM",
+  "instagram-comment": "komentarz"
+};
 
 const ProfileBuilder = () => {
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -102,7 +110,8 @@ const ProfileBuilder = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">#</TableHead>
-                  <TableHead>Wiadomość</TableHead>
+                  <TableHead>Treść</TableHead>
+                  <TableHead className="w-28">Źródło</TableHead>
                   <TableHead className="w-16" />
                 </TableRow>
               </TableHeader>
@@ -110,7 +119,10 @@ const ProfileBuilder = () => {
                 {samples.map((sample) => (
                   <TableRow key={sample.id}>
                     <TableCell className="text-muted-foreground">{sample.id}</TableCell>
-                    <TableCell className="max-w-130 truncate whitespace-pre-wrap">{sample.text}</TableCell>
+                    <TableCell className="max-w-110 truncate whitespace-pre-wrap">{sample.text}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{SOURCE_LABELS[sample.source] ?? sample.source}</Badge>
+                    </TableCell>
                     <TableCell>
                       <Button
                         type="button"

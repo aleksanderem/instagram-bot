@@ -68,6 +68,45 @@ async function metaPost(url: string, accessToken: string, body: unknown) {
   return response.json();
 }
 
+async function metaGet(url: URL, accessToken: string) {
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Meta request failed: ${await response.text()}`);
+  return response.json() as Promise<{ data?: Array<Record<string, any>> }>;
+}
+
+export async function fetchOwnMedia(accessToken: string) {
+  const url = new URL(`${graphBase()}/me/media`);
+  url.searchParams.set("fields", "id,caption,media_type,timestamp");
+  url.searchParams.set("limit", "50");
+  const { data } = await metaGet(url, accessToken);
+  return (data ?? []).map((item) => ({ id: String(item.id), caption: typeof item.caption === "string" ? item.caption : "" }));
+}
+
+export async function fetchMediaComments(mediaId: string, accessToken: string) {
+  const url = new URL(`${graphBase()}/${mediaId}/comments`);
+  url.searchParams.set("fields", "id,text,from,username,replies{text,from,username}");
+  url.searchParams.set("limit", "50");
+  const { data } = await metaGet(url, accessToken);
+  return data ?? [];
+}
+
+export async function fetchConversationMessages(accountId: string, accessToken: string) {
+  const conversationsUrl = new URL(`${graphBase()}/${accountId}/conversations`);
+  conversationsUrl.searchParams.set("fields", "id");
+  conversationsUrl.searchParams.set("limit", "20");
+  const { data } = await metaGet(conversationsUrl, accessToken);
+  const messages: Array<Record<string, any>> = [];
+  for (const conversation of data ?? []) {
+    const messagesUrl = new URL(`${graphBase()}/${String(conversation.id)}/messages`);
+    messagesUrl.searchParams.set("fields", "id,from,message,created_time");
+    messagesUrl.searchParams.set("limit", "50");
+    const page = await metaGet(messagesUrl, accessToken);
+    messages.push(...(page.data ?? []));
+  }
+  return messages;
+}
+
 export function parseWebhook(payload: unknown): InboundEvent[] {
   const body = payload as { entry?: Array<Record<string, unknown>> };
   const events: InboundEvent[] = [];

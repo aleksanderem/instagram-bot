@@ -15,12 +15,14 @@ import {
   getReview,
   getStoredSettings,
   insertInbound,
+  listAccounts,
   listReviews,
   listSamples,
   saveSettingsPatch,
   updateReview,
   upsertAccount
 } from "./db.js";
+import { importAccountContent } from "./ingest.js";
 import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, parseWebhook, replyToComment, sendMessage } from "./meta.js";
 import { validateDraft } from "./policy.js";
 import { generateBrandProfile } from "./profile.js";
@@ -33,7 +35,7 @@ app.use(express.json({ limit: "1mb", verify: (req, _res, body) => { (req as Requ
 const oauthStates = new Set<string>();
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, metaOAuthConfigured: hasMetaOAuthConfig(), aiConfigured: Boolean(config.OPENAI_API_KEY) });
+  res.json({ ok: true, metaOAuthConfigured: hasMetaOAuthConfig(), aiConfigured: Boolean(config.MINIMAX_API_KEY) });
 });
 
 app.get("/auth/instagram/start", (_req, res) => {
@@ -53,7 +55,14 @@ app.get("/auth/instagram/callback", async (req, res) => {
     const allowed = getEffectiveSettings().allowedInstagramAccountIds;
     if (allowed.size && !allowed.has(account.id)) return res.status(403).send("This Instagram account is not allowed.");
     upsertAccount(account.id, account.username, encrypt(token.access_token));
-    res.type("html").send("<h1>Instagram connected</h1><p>You can close this window and configure webhooks in Meta.</p>");
+    void importAccountContent(account.id)
+      .then((imported) => console.log("Instagram content import finished", imported))
+      .catch((error) => console.error("Instagram content import failed", error));
+    res
+      .type("html")
+      .send(
+        "<h1>Instagram connected</h1><p>Trwa pobieranie postów, wiadomości i komentarzy profilu do bazy profilu komunikacji. Możesz zamknąć to okno i wrócić do panelu.</p>"
+      );
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : "Instagram authorization failed" });
   }
@@ -126,7 +135,23 @@ app.post("/api/profile/samples", (req, res) => {
   if (!texts || texts.some((text: unknown) => typeof text !== "string")) {
     return res.status(422).json({ error: "Provide text or texts[] with sample messages." });
   }
-  res.json(addSamples(texts as string[]));
+  res.json(addSamples(texts as string[]).samples);
+});
+
+app.get("/api/accounts", (_req, res) => res.json(listAccounts()));
+
+app.post("/api/profile/import", async (_req, res) => {
+  const accounts = listAccounts();
+  if (!accounts.length) return res.status(409).json({ error: "Najpierw połącz konto Instagram." });
+  try {
+    const results = [];
+    for (const account of accounts) {
+      results.push({ account: account.username ?? account.instagram_id, ...(await importAccountContent(account.instagram_id)) });
+    }
+    res.json(results);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : "Import failed." });
+  }
 });
 
 app.delete("/api/profile/samples/:id", (req, res) => {
@@ -183,6 +208,8 @@ async function processInboundWebhook(payload: unknown) {
   const settings = getEffectiveSettings();
   for (const event of parseWebhook(payload)) {
     if (settings.allowedInstagramAccountIds.size && !settings.allowedInstagramAccountIds.has(event.accountId)) continue;
+    if (event.channel === "dm" && !settings.respondToDms) continue;
+    if (event.channel === "comment" && !settings.respondToComments) continue;
     if (!insertInbound(event)) continue; // delivery retries must not create duplicate replies
     const draft = await createDraft(event.text, event.channel);
     const draftIssue = validateDraft(draft.text, event.channel);

@@ -11,6 +11,9 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") }
   },
   server: {
-    proxy: { "/api": "http://localhost:3000" }
+    proxy: {
+      "/api": process.env.VITE_API_TARGET ?? "http://localhost:3010",
+      "/auth": process.env.VITE_API_TARGET ?? "http://localhost:3010"
+    }
   }
 });

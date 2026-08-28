@@ -7,7 +7,9 @@ Bezpieczny starter własnego bota do wiadomości prywatnych i komentarzy na Inst
 - Połączenie konta Instagram Business/Creator przez OAuth Meta.
 - Webhooki wiadomości i komentarzy, z ochroną przed podwójnym przetworzeniem zdarzeń.
 - Szyfrowane lokalnie tokeny dostępu (AES-256-GCM) w pliku JSON z uprawnieniami tylko dla właściciela procesu. W produkcji należy zastąpić go zarządzaną bazą danych.
-- Generowanie krótkiej odpowiedzi AI według określonego tonu.
+- Generowanie krótkiej odpowiedzi AI według określonego tonu (MiniMax, domyślnie model MiniMax-M3).
+- Wybór, czy bot odpowiada na wiadomości prywatne, komentarze, czy jedno i drugie.
+- Automatyczny import postów, własnych wiadomości i komentarzy profilu po połączeniu konta — jako baza spójnego języka marki.
 - Reguły eskalacji (reklamacje, płatności, dane osobowe itp.) i kontrolę długości/ryzykownych obietnic.
 - Kolejkę odpowiedzi do zatwierdzenia oraz endpoint wysyłający DM albo odpowiedź w wątku komentarza.
 
@@ -52,8 +54,9 @@ W środowisku produkcyjnym endpointy panelu należy zabezpieczyć logowaniem adm
 
 W katalogu `panel/` jest panel www (React + shadcn) do konfiguracji bota:
 
-- **Ustawienia** — model AI, automatyczna wysyłka, dozwolone konta Instagram, wytyczne tonu.
-- **Profil komunikacji** — wklejasz przykładowe wiadomości klientów i odpowiedzi marki, a AI buduje z nich `brand.md`; wygenerowaną propozycję zatwierdzasz ręcznie.
+- **Ustawienia** — model AI (MiniMax), automatyczna wysyłka, odpowiadanie na DM-y/komentarze, dozwolone konta Instagram, wytyczne tonu.
+- **Konto Instagram** — podłączanie konta przez OAuth Meta i ręczne ponowienie importu treści profilu.
+- **Profil komunikacji** — przykładowe treści (wklejone ręcznie + zaimportowane z Instagrama), z których AI buduje `brand.md`; wygenerowaną propozycję zatwierdzasz ręcznie.
 
 Uruchomienie: `npm run panel:build`, potem panel jest dostępny pod `http://localhost:3000/panel/` (serwuje go główny serwer). Do pracy nad panelem: `npm run panel:dev` (port 5173, proxy do API na 3000). Logowanie kluczem `ADMIN_API_KEY`.
 

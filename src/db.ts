@@ -7,7 +7,7 @@ import type { Channel, ReviewStatus } from "./types.js";
 type Account = { instagram_id: string; username: string | null; encrypted_access_token: string; created_at: string; updated_at: string };
 type Inbound = { external_id: string; account_id: string; channel: Channel; sender_id: string; text: string; reply_to_id: string | null; received_at: string };
 type Review = { id: number; external_id: string; draft_text: string; status: ReviewStatus; reason: string | null; created_at: string; updated_at: string };
-type Sample = { id: number; text: string; added_at: string };
+type Sample = { id: number; text: string; source: string; added_at: string };
 type Store = {
   accounts: Record<string, Account>;
   inbound: Record<string, Inbound>;
@@ -96,7 +96,7 @@ export function getEffectiveSettings(): EffectiveSettings {
   return effectiveSettings(
     {
       autoSendConfidentDrafts: config.autoSendConfidentDrafts,
-      openaiModel: config.OPENAI_MODEL,
+      aiModel: config.MINIMAX_MODEL,
       allowedInstagramAccountIds: config.allowedInstagramAccountIds
     },
     store.settings
@@ -113,15 +113,28 @@ export function listSamples() {
   return store.samples;
 }
 
-export function addSamples(texts: string[]) {
+export function addSamples(texts: string[], source = "manual") {
   const now = new Date().toISOString();
+  const existing = new Set(store.samples.map((sample) => sample.text));
+  let added = 0;
   for (const text of texts) {
     const trimmed = text.trim();
-    if (!trimmed) continue;
-    store.samples.push({ id: store.nextSampleId++, text: trimmed, added_at: now });
+    if (!trimmed || existing.has(trimmed)) continue;
+    existing.add(trimmed);
+    store.samples.push({ id: store.nextSampleId++, text: trimmed, source, added_at: now });
+    added++;
   }
-  save();
-  return store.samples;
+  if (added) save();
+  return { samples: store.samples, added };
+}
+
+export function listAccounts() {
+  return Object.values(store.accounts).map(({ instagram_id, username, created_at, updated_at }) => ({
+    instagram_id,
+    username,
+    created_at,
+    updated_at
+  }));
 }
 
 export function deleteSample(id: number) {

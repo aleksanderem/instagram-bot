@@ -3,7 +3,7 @@ import { effectiveSettings, sanitizeSettingsPatch } from "./settings.js";
 
 const envDefaults = {
   autoSendConfidentDrafts: false,
-  openaiModel: "gpt-4.1-mini",
+  aiModel: "MiniMax-M3",
   allowedInstagramAccountIds: new Set(["111"])
 };
 
@@ -11,28 +11,33 @@ describe("effectiveSettings", () => {
   it("falls back to env defaults when nothing is stored", () => {
     const effective = effectiveSettings(envDefaults, {});
     expect(effective.autoSendConfidentDrafts).toBe(false);
-    expect(effective.openaiModel).toBe("gpt-4.1-mini");
+    expect(effective.aiModel).toBe("MiniMax-M3");
     expect([...effective.allowedInstagramAccountIds]).toEqual(["111"]);
     expect(effective.toneNotes).toBe("");
+    expect(effective.respondToDms).toBe(true);
+    expect(effective.respondToComments).toBe(true);
   });
 
   it("stored values override env defaults", () => {
     const effective = effectiveSettings(envDefaults, {
       autoSendConfidentDrafts: true,
-      openaiModel: "gpt-4.1",
+      aiModel: "MiniMax-M2",
       allowedInstagramAccountIds: ["222", "333"],
-      toneNotes: "ciepło, konkretnie"
+      toneNotes: "ciepło, konkretnie",
+      respondToDms: true,
+      respondToComments: false
     });
     expect(effective.autoSendConfidentDrafts).toBe(true);
-    expect(effective.openaiModel).toBe("gpt-4.1");
+    expect(effective.aiModel).toBe("MiniMax-M2");
     expect([...effective.allowedInstagramAccountIds]).toEqual(["222", "333"]);
     expect(effective.toneNotes).toBe("ciepło, konkretnie");
+    expect(effective.respondToComments).toBe(false);
   });
 });
 
 describe("sanitizeSettingsPatch", () => {
   it("accepts a valid partial patch", () => {
-    expect(sanitizeSettingsPatch({ autoSendConfidentDrafts: true })).toEqual({ autoSendConfidentDrafts: true });
+    expect(sanitizeSettingsPatch({ respondToComments: false })).toEqual({ respondToComments: false });
   });
 
   it("trims and drops empty account ids", () => {
@@ -41,7 +46,7 @@ describe("sanitizeSettingsPatch", () => {
   });
 
   it("rejects unknown keys and wrong types", () => {
-    expect(() => sanitizeSettingsPatch({ openaiModel: 42 })).toThrow();
+    expect(() => sanitizeSettingsPatch({ aiModel: 42 })).toThrow();
     expect(() => sanitizeSettingsPatch({ nope: true })).toThrow();
   });
 

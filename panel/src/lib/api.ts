@@ -18,9 +18,11 @@ export function setAdminKey(value: string) {
 
 export interface EffectiveSettings {
   autoSendConfidentDrafts: boolean;
-  openaiModel: string;
+  aiModel: string;
   allowedInstagramAccountIds: string[];
   toneNotes: string;
+  respondToDms: boolean;
+  respondToComments: boolean;
 }
 
 export interface SettingsResponse {
@@ -31,7 +33,23 @@ export interface SettingsResponse {
 export interface Sample {
   id: number;
   text: string;
+  source: string;
   added_at: string;
+}
+
+export interface InstagramAccount {
+  instagram_id: string;
+  username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportResult {
+  account: string;
+  posts: number;
+  comments: number;
+  messages: number;
+  errors: string[];
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

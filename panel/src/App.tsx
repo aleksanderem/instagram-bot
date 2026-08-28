@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import InstagramAccounts from "@/components/panel/InstagramAccounts";
 import ProfileBuilder from "@/components/panel/ProfileBuilder";
 import SettingsForm from "@/components/panel/SettingsForm";
 import { api, getAdminKey, setAdminKey } from "@/lib/api";
@@ -110,10 +111,14 @@ const App = () => {
         <Tabs defaultValue="settings">
           <TabsList className="mb-8">
             <TabsTrigger value="settings">Ustawienia</TabsTrigger>
+            <TabsTrigger value="account">Konto Instagram</TabsTrigger>
             <TabsTrigger value="profile">Profil komunikacji</TabsTrigger>
           </TabsList>
           <TabsContent value="settings">
             <SettingsForm />
+          </TabsContent>
+          <TabsContent value="account">
+            <InstagramAccounts />
           </TabsContent>
           <TabsContent value="profile">
             <ProfileBuilder />

@@ -1,32 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { extractOutputText } from "./ai.js";
+import { extractChatText, parseDraftJson } from "./ai.js";
 
-describe("extractOutputText", () => {
-  it("reads text from the raw Responses API output array", () => {
-    const payload = {
-      output: [
-        { type: "reasoning", content: [] },
-        { type: "message", content: [{ type: "output_text", text: '{"text":"Dziękujemy!"}' }] }
-      ]
-    };
-    expect(extractOutputText(payload)).toBe('{"text":"Dziękujemy!"}');
+describe("extractChatText", () => {
+  it("reads the first choice's message content", () => {
+    expect(extractChatText({ choices: [{ message: { content: '{"text":"Dziękujemy!"}' } }] })).toBe(
+      '{"text":"Dziękujemy!"}'
+    );
   });
 
-  it("joins multiple output_text parts in order", () => {
-    const payload = {
-      output: [
-        { type: "message", content: [{ type: "output_text", text: "{" }, { type: "output_text", text: "}" }] }
-      ]
-    };
-    expect(extractOutputText(payload)).toBe("{}");
+  it("strips a <think> block from reasoning models", () => {
+    const content = "<think>rozważam ton odpowiedzi</think>\n{\"text\":\"Cześć!\"}";
+    expect(extractChatText({ choices: [{ message: { content } }] })).toBe('{"text":"Cześć!"}');
   });
 
-  it("prefers a top-level output_text when present", () => {
-    expect(extractOutputText({ output_text: "abc", output: [] })).toBe("abc");
+  it("returns an empty string when there is no content", () => {
+    expect(extractChatText({ choices: [] })).toBe("");
+    expect(extractChatText({})).toBe("");
+    expect(extractChatText({ choices: [{ message: { content: null } }] })).toBe("");
+  });
+});
+
+describe("parseDraftJson", () => {
+  it("parses a plain JSON object", () => {
+    const draft = parseDraftJson('{"text":"Hej","shouldEscalate":false,"reason":null,"confidence":"high"}');
+    expect(draft.text).toBe("Hej");
+    expect(draft.confidence).toBe("high");
   });
 
-  it("returns an empty string when there is no text output", () => {
-    expect(extractOutputText({ output: [{ type: "reasoning" }] })).toBe("");
-    expect(extractOutputText({})).toBe("");
+  it("parses JSON wrapped in a markdown fence", () => {
+    const draft = parseDraftJson('```json\n{"text":"Hej","shouldEscalate":false,"reason":null,"confidence":"low"}\n```');
+    expect(draft.text).toBe("Hej");
+  });
+
+  it("throws when there is no JSON object", () => {
+    expect(() => parseDraftJson("przepraszam, nie umiem")).toThrow();
   });
 });

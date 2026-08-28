@@ -48,6 +48,15 @@ Odrzucenie: `POST /api/reviews/ID/reject`.
 
 W środowisku produkcyjnym endpointy panelu należy zabezpieczyć logowaniem administratora (np. przez dostawcę SSO) oraz prowadzić rejestr akcji moderacyjnych.
 
+## Panel administracyjny
+
+W katalogu `panel/` jest panel www (React + shadcn) do konfiguracji bota:
+
+- **Ustawienia** — model AI, automatyczna wysyłka, dozwolone konta Instagram, wytyczne tonu.
+- **Profil komunikacji** — wklejasz przykładowe wiadomości klientów i odpowiedzi marki, a AI buduje z nich `brand.md`; wygenerowaną propozycję zatwierdzasz ręcznie.
+
+Uruchomienie: `npm run panel:build`, potem panel jest dostępny pod `http://localhost:3000/panel/` (serwuje go główny serwer). Do pracy nad panelem: `npm run panel:dev` (port 5173, proxy do API na 3000). Logowanie kluczem `ADMIN_API_KEY`.
+
 ## Ton i wiedza marki
 
 Ogólne reguły bezpieczeństwa są w `src/ai.ts`. Przed uruchomieniem produkcyjnym uzupełnij lokalny plik `brand.md` na bazie `brand.md.example` o:

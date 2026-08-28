@@ -1,19 +1,32 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { config } from "./config.js";
+import { effectiveSettings, type EffectiveSettings, type StoredSettings } from "./settings.js";
 import type { Channel, ReviewStatus } from "./types.js";
 
 type Account = { instagram_id: string; username: string | null; encrypted_access_token: string; created_at: string; updated_at: string };
 type Inbound = { external_id: string; account_id: string; channel: Channel; sender_id: string; text: string; reply_to_id: string | null; received_at: string };
 type Review = { id: number; external_id: string; draft_text: string; status: ReviewStatus; reason: string | null; created_at: string; updated_at: string };
-type Store = { accounts: Record<string, Account>; inbound: Record<string, Inbound>; reviews: Review[]; nextReviewId: number };
+type Sample = { id: number; text: string; added_at: string };
+type Store = {
+  accounts: Record<string, Account>;
+  inbound: Record<string, Inbound>;
+  reviews: Review[];
+  nextReviewId: number;
+  settings: StoredSettings;
+  samples: Sample[];
+  nextSampleId: number;
+};
 
 const databasePath = config.DATABASE_PATH;
 mkdirSync(dirname(databasePath), { recursive: true });
 
+const emptyStore = (): Store => ({ accounts: {}, inbound: {}, reviews: [], nextReviewId: 1, settings: {}, samples: [], nextSampleId: 1 });
+
 function load(): Store {
-  if (!existsSync(databasePath)) return { accounts: {}, inbound: {}, reviews: [], nextReviewId: 1 };
-  return JSON.parse(readFileSync(databasePath, "utf8")) as Store;
+  if (!existsSync(databasePath)) return emptyStore();
+  // Older data files may predate settings/samples — fill in the new fields.
+  return { ...emptyStore(), ...(JSON.parse(readFileSync(databasePath, "utf8")) as Partial<Store>) };
 }
 
 let store = load();
@@ -73,6 +86,49 @@ export function getReview(id: number) {
   const review = store.reviews.find((candidate) => candidate.id === id);
   const inbound = review ? store.inbound[review.external_id] : undefined;
   return review && inbound ? { ...review, ...inbound } : undefined;
+}
+
+export function getStoredSettings(): StoredSettings {
+  return store.settings;
+}
+
+export function getEffectiveSettings(): EffectiveSettings {
+  return effectiveSettings(
+    {
+      autoSendConfidentDrafts: config.autoSendConfidentDrafts,
+      openaiModel: config.OPENAI_MODEL,
+      allowedInstagramAccountIds: config.allowedInstagramAccountIds
+    },
+    store.settings
+  );
+}
+
+export function saveSettingsPatch(patch: StoredSettings) {
+  store.settings = { ...store.settings, ...patch };
+  save();
+  return getEffectiveSettings();
+}
+
+export function listSamples() {
+  return store.samples;
+}
+
+export function addSamples(texts: string[]) {
+  const now = new Date().toISOString();
+  for (const text of texts) {
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    store.samples.push({ id: store.nextSampleId++, text: trimmed, added_at: now });
+  }
+  save();
+  return store.samples;
+}
+
+export function deleteSample(id: number) {
+  const before = store.samples.length;
+  store.samples = store.samples.filter((sample) => sample.id !== id);
+  if (store.samples.length !== before) save();
+  return store.samples.length !== before;
 }
 
 export function updateReview(id: number, status: ReviewStatus, draftText?: string) {

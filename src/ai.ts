@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
+import { getEffectiveSettings } from "./db.js";
 import { fallbackDraft, requiresHuman, validateDraft } from "./policy.js";
 import type { Channel, Draft } from "./types.js";
 
@@ -43,7 +44,7 @@ export async function createDraft(text: string, channel: Channel): Promise<Draft
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: config.OPENAI_MODEL,
+        model: getEffectiveSettings().openaiModel,
         input: [
           { role: "system", content: `${knowledgeBase}\n\nKsięga marki:\n${brandContext()}` },
           { role: "user", content: `Kanał: ${channel}. Wiadomość użytkownika: ${text}` }

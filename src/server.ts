@@ -1,11 +1,31 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { createDraft } from "./ai.js";
 import { config, hasEncryptionKey, hasMetaOAuthConfig } from "./config.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { createReview, getAccount, getReview, insertInbound, listReviews, updateReview, upsertAccount } from "./db.js";
+import {
+  addSamples,
+  createReview,
+  deleteSample,
+  getAccount,
+  getEffectiveSettings,
+  getReview,
+  getStoredSettings,
+  insertInbound,
+  listReviews,
+  listSamples,
+  saveSettingsPatch,
+  updateReview,
+  upsertAccount
+} from "./db.js";
 import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, parseWebhook, replyToComment, sendMessage } from "./meta.js";
 import { validateDraft } from "./policy.js";
+import { generateBrandProfile } from "./profile.js";
+import type { EffectiveSettings } from "./settings.js";
+import { sanitizeSettingsPatch } from "./settings.js";
 
 const app = express();
 type RequestWithRawBody = express.Request & { rawBody?: Buffer };
@@ -30,7 +50,8 @@ app.get("/auth/instagram/callback", async (req, res) => {
   try {
     const token = await exchangeCode(code);
     const account = await getInstagramAccount(token.access_token);
-    if (config.allowedInstagramAccountIds.size && !config.allowedInstagramAccountIds.has(account.id)) return res.status(403).send("This Instagram account is not allowed.");
+    const allowed = getEffectiveSettings().allowedInstagramAccountIds;
+    if (allowed.size && !allowed.has(account.id)) return res.status(403).send("This Instagram account is not allowed.");
     upsertAccount(account.id, account.username, encrypt(token.access_token));
     res.type("html").send("<h1>Instagram connected</h1><p>You can close this window and configure webhooks in Meta.</p>");
   } catch (error) {
@@ -80,6 +101,64 @@ app.post("/api/reviews/:id/reject", (req, res) => {
   res.json({ ok: true });
 });
 
+function settingsResponse(effective: EffectiveSettings) {
+  return { stored: getStoredSettings(), effective: { ...effective, allowedInstagramAccountIds: [...effective.allowedInstagramAccountIds] } };
+}
+
+app.get("/api/settings", (_req, res) => res.json(settingsResponse(getEffectiveSettings())));
+
+app.put("/api/settings", (req, res) => {
+  try {
+    res.json(settingsResponse(saveSettingsPatch(sanitizeSettingsPatch(req.body))));
+  } catch (error) {
+    res.status(422).json({ error: error instanceof Error ? error.message : "Invalid settings." });
+  }
+});
+
+app.get("/api/profile/samples", (_req, res) => res.json(listSamples()));
+
+app.post("/api/profile/samples", (req, res) => {
+  const texts = Array.isArray(req.body?.texts)
+    ? req.body.texts
+    : typeof req.body?.text === "string"
+      ? [req.body.text]
+      : undefined;
+  if (!texts || texts.some((text: unknown) => typeof text !== "string")) {
+    return res.status(422).json({ error: "Provide text or texts[] with sample messages." });
+  }
+  res.json(addSamples(texts as string[]));
+});
+
+app.delete("/api/profile/samples/:id", (req, res) => {
+  if (!deleteSample(Number(req.params.id))) return res.sendStatus(404);
+  res.json({ ok: true });
+});
+
+app.get("/api/brand", (_req, res) => {
+  const content = existsSync(config.BRAND_CONTEXT_PATH) ? readFileSync(config.BRAND_CONTEXT_PATH, "utf8") : "";
+  res.json({ content, path: config.BRAND_CONTEXT_PATH });
+});
+
+app.put("/api/brand", (req, res) => {
+  const content = req.body?.content;
+  if (typeof content !== "string" || content.length > 100_000) {
+    return res.status(422).json({ error: "Provide content (string, max 100k characters)." });
+  }
+  writeFileSync(config.BRAND_CONTEXT_PATH, content, "utf8");
+  res.json({ ok: true });
+});
+
+app.post("/api/profile/generate", async (_req, res) => {
+  try {
+    res.json({ content: await generateBrandProfile() });
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : "Profile generation failed." });
+  }
+});
+
+const panelDist = resolve(dirname(fileURLToPath(import.meta.url)), "../panel/dist");
+app.use("/panel", express.static(panelDist));
+
 function hasValidMetaSignature(req: RequestWithRawBody) {
   if (!config.META_APP_SECRET || !req.rawBody) return false;
   const signature = req.header("x-hub-signature-256");
@@ -101,14 +180,15 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 }
 
 async function processInboundWebhook(payload: unknown) {
+  const settings = getEffectiveSettings();
   for (const event of parseWebhook(payload)) {
-    if (config.allowedInstagramAccountIds.size && !config.allowedInstagramAccountIds.has(event.accountId)) continue;
+    if (settings.allowedInstagramAccountIds.size && !settings.allowedInstagramAccountIds.has(event.accountId)) continue;
     if (!insertInbound(event)) continue; // delivery retries must not create duplicate replies
     const draft = await createDraft(event.text, event.channel);
     const draftIssue = validateDraft(draft.text, event.channel);
     const status = draft.shouldEscalate || draftIssue || draft.confidence !== "high" ? "pending" : "approved";
     createReview(event.externalId, draft.text, status, draft.reason ?? draftIssue);
-    if (status === "approved" && config.autoSendConfidentDrafts) {
+    if (status === "approved" && settings.autoSendConfidentDrafts) {
       const queued = listReviews().find((review) => review.external_id === event.externalId);
       if (queued) await sendReview(queued.id, draft.text);
     }

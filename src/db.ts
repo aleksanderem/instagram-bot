@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname } from "node:path";
 import { config } from "./config.js";
 import { effectiveSettings, type EffectiveSettings, type StoredSettings } from "./settings.js";
-import type { Channel, ReviewStatus } from "./types.js";
+import type { Channel, ConversationPair, ReviewStatus } from "./types.js";
 
 type Account = {
   instagram_id: string;
@@ -24,12 +24,13 @@ type Store = {
   settings: StoredSettings;
   samples: Sample[];
   nextSampleId: number;
+  pairs: ConversationPair[];
 };
 
 const databasePath = config.DATABASE_PATH;
 mkdirSync(dirname(databasePath), { recursive: true });
 
-const emptyStore = (): Store => ({ accounts: {}, inbound: {}, reviews: [], nextReviewId: 1, settings: {}, samples: [], nextSampleId: 1 });
+const emptyStore = (): Store => ({ accounts: {}, inbound: {}, reviews: [], nextReviewId: 1, settings: {}, samples: [], nextSampleId: 1, pairs: [] });
 
 function load(): Store {
   if (!existsSync(databasePath)) return emptyStore();
@@ -150,6 +151,28 @@ export function addSamples(texts: string[], source = "manual") {
   return { samples: store.samples, added };
 }
 
+
+const pairKey = (pair: ConversationPair) => `${pair.question}\u0000${pair.answer}`;
+
+/** Stores question/answer pairs, skipping ones already known. */
+export function addPairs(pairs: ConversationPair[]): { added: number } {
+  const known = new Set(store.pairs.map(pairKey));
+  const fresh = pairs.filter((pair) => {
+    const key = pairKey(pair);
+    if (known.has(key)) return false;
+    known.add(key);
+    return true;
+  });
+  if (!fresh.length) return { added: 0 };
+  store.pairs = [...store.pairs, ...fresh];
+  save();
+  return { added: fresh.length };
+}
+
+export function listPairs(): ConversationPair[] {
+  return store.pairs;
+}
+
 export function listAccounts() {
   return Object.values(store.accounts).map(({ instagram_id, username, created_at, updated_at }) => ({
     instagram_id,
@@ -164,6 +187,17 @@ export function deleteSample(id: number) {
   store.samples = store.samples.filter((sample) => sample.id !== id);
   if (store.samples.length !== before) save();
   return store.samples.length !== before;
+}
+
+
+/** Replaces a review's proposed answer, leaving it waiting for a human decision. */
+export function replaceDraft(id: number, draftText: string, reason: string | null) {
+  const index = store.reviews.findIndex((candidate) => candidate.id === id);
+  if (index === -1) return false;
+  const updated = { ...store.reviews[index], draft_text: draftText, reason, status: "pending" as ReviewStatus, updated_at: new Date().toISOString() };
+  store.reviews = [...store.reviews.slice(0, index), updated, ...store.reviews.slice(index + 1)];
+  save();
+  return true;
 }
 
 export function updateReview(id: number, status: ReviewStatus, draftText?: string) {

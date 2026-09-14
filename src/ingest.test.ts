@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownCommentTexts, ownContentId, ownMessageTexts } from "./ingest.js";
+import { ownCommentPairs, ownCommentTexts, ownContentId, ownMessagePairs, ownMessageTexts } from "./ingest.js";
 
 const ACCOUNT = "17841400000000000";
 
@@ -39,5 +39,55 @@ describe("ownContentId", () => {
 
   it("falls back to the stored id when the user id is not known yet", () => {
     expect(ownContentId({ instagram_id: "28223724180619255", ig_user_id: null })).toBe("28223724180619255");
+  });
+});
+
+describe("ownCommentPairs", () => {
+  it("pairs a stranger's comment with the reply the account wrote under it", () => {
+    const comments = [
+      {
+        text: "Przecież lubiłaś się grzać po mefedronie",
+        from: { id: "999" },
+        replies: { data: [{ text: "Nie komentuję takich sugestii.", from: { id: ACCOUNT } }] }
+      }
+    ];
+    expect(ownCommentPairs(comments, ACCOUNT)).toEqual([
+      { question: "Przecież lubiłaś się grzać po mefedronie", answer: "Nie komentuję takich sugestii.", source: "instagram-comment" }
+    ]);
+  });
+
+  it("skips comments the account wrote itself and ones it never answered", () => {
+    const comments = [
+      { text: "Nasz post", from: { id: ACCOUNT } },
+      { text: "Pytanie bez odpowiedzi", from: { id: "999" } }
+    ];
+    expect(ownCommentPairs(comments, ACCOUNT)).toEqual([]);
+  });
+});
+
+describe("ownMessagePairs", () => {
+  it("pairs each reply with the message it answered, oldest first", () => {
+    const messages = [
+      { from: { id: ACCOUNT }, message: "Napisz proszę prywatnie.", created_time: "2026-09-14T10:00:02+0000" },
+      { from: { id: "999" }, message: "Ile kosztuje konsultacja?", created_time: "2026-09-14T10:00:01+0000" }
+    ];
+    expect(ownMessagePairs(messages, ACCOUNT)).toEqual([
+      { question: "Ile kosztuje konsultacja?", answer: "Napisz proszę prywatnie.", source: "instagram-dm" }
+    ]);
+  });
+
+  it("joins a reply split across several messages", () => {
+    const messages = [
+      { from: { id: "999" }, message: "Jak długo trwa detoks?", created_time: "2026-09-14T10:00:01+0000" },
+      { from: { id: ACCOUNT }, message: "To zależy.", created_time: "2026-09-14T10:00:02+0000" },
+      { from: { id: ACCOUNT }, message: "Opowiem prywatnie.", created_time: "2026-09-14T10:00:03+0000" }
+    ];
+    expect(ownMessagePairs(messages, ACCOUNT)).toEqual([
+      { question: "Jak długo trwa detoks?", answer: "To zależy.\nOpowiem prywatnie.", source: "instagram-dm" }
+    ]);
+  });
+
+  it("ignores the account writing first with nothing to answer", () => {
+    expect(ownMessagePairs([{ from: { id: ACCOUNT }, message: "Cześć!", created_time: "2026-09-14T10:00:01+0000" }], ACCOUNT)).toEqual([]);
   });
 });

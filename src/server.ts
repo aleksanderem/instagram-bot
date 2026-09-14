@@ -20,6 +20,7 @@ import {
   listSamples,
   saveSettingsPatch,
   updateReview,
+  replaceDraft,
   upsertAccount
 } from "./db.js";
 import { importAccountContent } from "./ingest.js";
@@ -104,6 +105,19 @@ app.post("/api/reviews/:id/send", async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : "Meta send failed" });
+  }
+});
+
+app.post("/api/reviews/:id/regenerate", async (req, res) => {
+  const review = getReview(Number(req.params.id));
+  if (!review) return res.sendStatus(404);
+  if (review.status === "sent") return res.status(409).json({ error: "Ta odpowiedź została już wysłana." });
+  try {
+    const draft = await createDraft(review.text, review.channel);
+    replaceDraft(review.id, draft.text, draft.reason ?? null);
+    res.json({ ok: true, text: draft.text, reason: draft.reason ?? null });
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : "Nie udało się wygenerować nowej propozycji." });
   }
 });
 

@@ -1,9 +1,10 @@
 import { decrypt } from "./crypto.js";
-import { addSamples, getAccount, upsertAccount } from "./db.js";
+import { addPairs, addSamples, getAccount, upsertAccount } from "./db.js";
 import { fetchConversationMessages, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
+import type { ConversationPair } from "./types.js";
 
 type CommentNode = { text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
-type MessageNode = { from?: { id?: unknown }; message?: unknown };
+type MessageNode = { from?: { id?: unknown }; message?: unknown; created_time?: unknown };
 
 // Comments and replies written by the profile itself (its own voice).
 export function ownCommentTexts(comments: CommentNode[], accountId: string): string[] {
@@ -29,10 +30,57 @@ export function ownMessageTexts(messages: MessageNode[], accountId: string): str
     .filter(Boolean);
 }
 
+
+const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+/** Comments from other people together with the reply the account wrote underneath. */
+export function ownCommentPairs(comments: CommentNode[], accountId: string): ConversationPair[] {
+  const pairs: ConversationPair[] = [];
+  for (const comment of comments) {
+    const question = cleanText(comment.text);
+    if (!question || String(comment.from?.id ?? "") === accountId) continue;
+    for (const reply of comment.replies?.data ?? []) {
+      const answer = cleanText(reply.text);
+      if (answer && String(reply.from?.id ?? "") === accountId) {
+        pairs.push({ question, answer, source: "instagram-comment" });
+      }
+    }
+  }
+  return pairs;
+}
+
+/** Incoming messages together with the reply the account sent back, oldest first. */
+export function ownMessagePairs(messages: MessageNode[], accountId: string): ConversationPair[] {
+  const ordered = [...messages].sort((a, b) => String(a.created_time ?? "").localeCompare(String(b.created_time ?? "")));
+  const pairs: ConversationPair[] = [];
+  let question = "";
+  let reply: string[] = [];
+
+  const flush = () => {
+    if (question && reply.length) pairs.push({ question, answer: reply.join("\n"), source: "instagram-dm" });
+    reply = [];
+  };
+
+  for (const message of ordered) {
+    const text = cleanText(message.message);
+    if (!text) continue;
+    if (String(message.from?.id ?? "") === accountId) {
+      reply.push(text);
+      continue;
+    }
+    flush();
+    question = text;
+  }
+  flush();
+  return pairs;
+}
+
 export type ImportResult = {
   posts: number;
   comments: number;
   messages: number;
+  /** Past conversations kept as question/answer pairs, used to answer in the same way. */
+  pairs: number;
   errors: string[];
 };
 
@@ -60,7 +108,7 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
   if (!account) throw new Error("Instagram account is not connected.");
   const token = decrypt(account.encrypted_access_token);
   const ownId = await ensureOwnContentId(account, token);
-  const result: ImportResult = { posts: 0, comments: 0, messages: 0, errors: [] };
+  const result: ImportResult = { posts: 0, comments: 0, messages: 0, pairs: 0, errors: [] };
 
   let mediaIds: string[] = [];
   try {
@@ -74,10 +122,14 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
 
   try {
     const texts: string[] = [];
+    const pairs: ConversationPair[] = [];
     for (const mediaId of mediaIds.slice(0, MAX_MEDIA_FOR_COMMENTS)) {
-      texts.push(...ownCommentTexts(await fetchMediaComments(mediaId, token), ownId));
+      const comments = await fetchMediaComments(mediaId, token);
+      texts.push(...ownCommentTexts(comments, ownId));
+      pairs.push(...ownCommentPairs(comments, ownId));
     }
     result.comments = addSamples(texts, "instagram-comment").added;
+    result.pairs += addPairs(pairs).added;
   } catch (error) {
     result.errors.push(`Komentarze: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -85,6 +137,7 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
   try {
     const messages = await fetchConversationMessages(account.instagram_id, token);
     result.messages = addSamples(ownMessageTexts(messages, ownId), "instagram-dm").added;
+    result.pairs += addPairs(ownMessagePairs(messages, ownId)).added;
   } catch (error) {
     result.errors.push(`Wiadomości: ${error instanceof Error ? error.message : String(error)}`);
   }

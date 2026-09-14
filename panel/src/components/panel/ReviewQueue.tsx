@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { CheckIcon, RefreshCwIcon, SparklesIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,20 @@ const ReviewQueue = () => {
       await refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Wysyłka nie powiodła się.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const regenerate = async (review: Review) => {
+    setBusy(review.id);
+    try {
+      const result = await api<{ text: string }>(`/api/reviews/${review.id}/regenerate`, { method: "POST" });
+      setEdits((current) => ({ ...current, [review.id]: result.text }));
+      toast.success("Nowa propozycja gotowa.");
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nie udało się wygenerować nowej propozycji.");
     } finally {
       setBusy(null);
     }
@@ -111,6 +125,10 @@ const ReviewQueue = () => {
                 aria-label={`Odpowiedź na wiadomość ${review.id}`}
               />
               <div className="flex justify-end gap-3">
+                <Button type="button" variant="outline" disabled={busy === review.id} onClick={() => void regenerate(review)}>
+                  <SparklesIcon className="size-4" />
+                  {busy === review.id ? "Generuję…" : "Generuj ponownie"}
+                </Button>
                 <Button type="button" variant="outline" disabled={busy === review.id} onClick={() => reject(review)}>
                   <XIcon className="size-4" />
                   Odrzuć

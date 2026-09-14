@@ -16,3 +16,6 @@ export interface Draft {
   reason?: string;
   confidence: "high" | "medium" | "low";
 }
+
+/** A message or comment the brand received, together with the reply it wrote back. */
+export type ConversationPair = { question: string; answer: string; source: string };

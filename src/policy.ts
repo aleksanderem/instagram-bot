@@ -16,6 +16,27 @@ const UNSAFE_PROMISES = [
   /zawsze/i,
   /100%/i];
 
+
+/**
+ * Baiting comments that hint at the author's own drug use or sex life. They get a
+ * professional non-answer, never a denial or a confirmation, and never auto-send.
+ */
+const PROVOCATION_PATTERNS = [
+  /lubi(ł|l)a(ś|s)?\s+si(ę|e)\s+grza/i,
+  /grza(ć|c)\s+si(ę|e)/i,
+  /chemsex/i,
+  /seks\w*\s+(po|na|z)\s+\w*(dragach|narkotyk|mefedron|kokain|amfet)/i,
+  /(po|na)\s+(dragach|prochach)/i,
+  /ile\s+(chłopa|chlopa|facet|panów|panow)/i,
+  /(ćpa|cpa)(ła|la)(ś|s)/i,
+  /brała(ś|s)\s+i\s+/i
+];
+
+/** True when the message is a taunt about sex or drug use rather than a real question. */
+export function isProvocative(text: string): boolean {
+  return PROVOCATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function requiresHuman(text: string): string | undefined {
   const matching = ESCALATION_PATTERNS.find((pattern) => pattern.test(text));
   return matching ? "Wiadomość dotyczy sprawy wymagającej obsługi przez człowieka." : undefined;

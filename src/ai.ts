@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
-import { getEffectiveSettings } from "./db.js";
-import { fallbackDraft, requiresHuman, validateDraft } from "./policy.js";
-import type { Channel, Draft } from "./types.js";
+import { getEffectiveSettings, listPairs } from "./db.js";
+import { fallbackDraft, isProvocative, requiresHuman, validateDraft } from "./policy.js";
+import { findSimilarPairs } from "./similar.js";
+import type { Channel, ConversationPair, Draft } from "./types.js";
 
 const knowledgeBase = `
 Jesteś asystentem marki na Instagramie. Odpowiadasz po polsku, rzeczowo, uprzejmie i krótko.
@@ -18,6 +19,45 @@ Bez żadnego tekstu przed ani po obiekcie JSON.
 function brandContext() {
   if (!existsSync(config.BRAND_CONTEXT_PATH)) return "Brak dodatkowej księgi marki. Nie zgaduj faktów o firmie.";
   return readFileSync(config.BRAND_CONTEXT_PATH, "utf8").slice(0, 20_000);
+}
+
+
+const PROVOCATION_RULE = `
+Ta wiadomość jest zaczepką sugerującą coś o życiu seksualnym lub braniu substancji przez autora marki.
+Odpowiedz profesjonalnie i krótko. Nie potwierdzaj ani nie zaprzeczaj żadnej z tych sugestii.
+Nie żartuj, nie ironizuj, nie tłumacz się i nie wchodź w temat. Nie zadawaj pytań.
+Możesz odesłać do rozmowy prywatnej, jeśli ktoś realnie szuka pomocy.
+`;
+
+const MAX_SIMILAR_PAIRS = 5;
+
+const pastAnswersSection = (pairs: ConversationPair[]) =>
+  pairs.length
+    ? `Tak odpowiadaliśmy wcześniej na podobne wiadomości. Trzymaj się tego sposobu:\n${pairs
+        .map((pair, index) => `${index + 1}. Pytanie: ${pair.question}\n   Nasza odpowiedź: ${pair.answer}`)
+        .join("\n")}`
+    : "";
+
+/** The full prompt sent to the model, kept separate so it can be inspected in tests. */
+export function buildDraftMessages(
+  text: string,
+  channel: Channel,
+  pairs: ConversationPair[],
+  brand: string
+): Array<{ role: string; content: string }> {
+  const similar = findSimilarPairs(pairs, text, MAX_SIMILAR_PAIRS);
+  const system = [
+    knowledgeBase,
+    `Księga marki:\n${brand}`,
+    pastAnswersSection(similar),
+    isProvocative(text) ? PROVOCATION_RULE : ""
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  return [
+    { role: "system", content: system },
+    { role: "user", content: `Kanał: ${channel}. Wiadomość użytkownika: ${text}` }
+  ];
 }
 
 type ChatCompletionsPayload = {
@@ -60,15 +100,16 @@ export async function createDraft(text: string, channel: Channel): Promise<Draft
 
   try {
     const output = await chatCompletion(
-      [
-        { role: "system", content: `${knowledgeBase}\n\nKsięga marki:\n${brandContext()}` },
-        { role: "user", content: `Kanał: ${channel}. Wiadomość użytkownika: ${text}` }
-      ],
+      buildDraftMessages(text, channel, listPairs(), brandContext()),
       getEffectiveSettings().aiModel
     );
     const draft = parseDraftJson(output);
     const issue = validateDraft(draft.text, channel);
     if (issue) return fallbackDraft(channel, issue);
+    // A taunt may never go out automatically, however confident the model is.
+    if (isProvocative(text)) {
+      return { ...draft, shouldEscalate: true, reason: draft.reason ?? "Zaczepka — odpowiedź wymaga zatwierdzenia." };
+    }
     return draft;
   } catch {
     return fallbackDraft(channel, "Nie udało się bezpiecznie wygenerować odpowiedzi.");

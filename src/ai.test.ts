@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractChatText, parseDraftJson } from "./ai.js";
+import { buildDraftMessages, extractChatText, parseDraftJson } from "./ai.js";
 
 describe("extractChatText", () => {
   it("reads the first choice's message content", () => {
@@ -34,5 +34,36 @@ describe("parseDraftJson", () => {
 
   it("throws when there is no JSON object", () => {
     expect(() => parseDraftJson("przepraszam, nie umiem")).toThrow();
+  });
+});
+
+describe("buildDraftMessages", () => {
+  const pairs = [
+    {
+      question: "Przecież lubiłaś się grzać po mefedronie",
+      answer: "Nie komentuję takich sugestii.",
+      source: "instagram-comment"
+    }
+  ];
+
+  it("shows the model how similar messages were answered before", () => {
+    const prompt = buildDraftMessages("lubiłaś grzanie mefedronem?", "comment", pairs, "księga").map((m) => m.content).join("\n");
+    expect(prompt).toContain("Nie komentuję takich sugestii.");
+  });
+
+  it("adds the no-confirmation rule when the message is a taunt", () => {
+    const prompt = buildDraftMessages("Przecież lubiłaś się grzać po mefedronie", "comment", [], "księga").map((m) => m.content).join("\n");
+    expect(prompt).toMatch(/nie potwierdzaj/i);
+  });
+
+  it("leaves an ordinary question without the taunt rule", () => {
+    const prompt = buildDraftMessages("Ile trwa konsultacja?", "comment", [], "księga").map((m) => m.content).join("\n");
+    expect(prompt).not.toMatch(/nie potwierdzaj/i);
+  });
+
+  it("carries the brand book and the message itself", () => {
+    const prompt = buildDraftMessages("Ile trwa konsultacja?", "dm", [], "TRESC KSIEGI").map((m) => m.content).join("\n");
+    expect(prompt).toContain("TRESC KSIEGI");
+    expect(prompt).toContain("Ile trwa konsultacja?");
   });
 });

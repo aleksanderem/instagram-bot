@@ -1,6 +1,6 @@
 import { decrypt } from "./crypto.js";
-import { addSamples, getAccount } from "./db.js";
-import { fetchConversationMessages, fetchMediaComments, fetchOwnMedia } from "./meta.js";
+import { addSamples, getAccount, upsertAccount } from "./db.js";
+import { fetchConversationMessages, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
 
 type CommentNode = { text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
 type MessageNode = { from?: { id?: unknown }; message?: unknown };
@@ -38,10 +38,28 @@ export type ImportResult = {
 
 const MAX_MEDIA_FOR_COMMENTS = 25;
 
+/**
+ * Instagram signs the account's own posts, comments and DMs with its user id,
+ * which is not the id the account is stored under. Compare against that one.
+ */
+export function ownContentId(account: { instagram_id: string; ig_user_id?: string | null }): string {
+  return account.ig_user_id || account.instagram_id;
+}
+
+/** Accounts connected before the user id was stored need it filled in once. */
+async function ensureOwnContentId(account: { instagram_id: string; ig_user_id?: string | null; username: string | null; encrypted_access_token: string }, token: string) {
+  if (account.ig_user_id) return account.ig_user_id;
+  const fresh = await getInstagramAccount(token);
+  if (!fresh.user_id) return account.instagram_id;
+  upsertAccount(account.instagram_id, account.username ?? undefined, account.encrypted_access_token, fresh.user_id);
+  return fresh.user_id;
+}
+
 export async function importAccountContent(accountId: string): Promise<ImportResult> {
   const account = getAccount(accountId);
   if (!account) throw new Error("Instagram account is not connected.");
   const token = decrypt(account.encrypted_access_token);
+  const ownId = await ensureOwnContentId(account, token);
   const result: ImportResult = { posts: 0, comments: 0, messages: 0, errors: [] };
 
   let mediaIds: string[] = [];
@@ -57,7 +75,7 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
   try {
     const texts: string[] = [];
     for (const mediaId of mediaIds.slice(0, MAX_MEDIA_FOR_COMMENTS)) {
-      texts.push(...ownCommentTexts(await fetchMediaComments(mediaId, token), accountId));
+      texts.push(...ownCommentTexts(await fetchMediaComments(mediaId, token), ownId));
     }
     result.comments = addSamples(texts, "instagram-comment").added;
   } catch (error) {
@@ -65,8 +83,8 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
   }
 
   try {
-    const messages = await fetchConversationMessages(accountId, token);
-    result.messages = addSamples(ownMessageTexts(messages, accountId), "instagram-dm").added;
+    const messages = await fetchConversationMessages(account.instagram_id, token);
+    result.messages = addSamples(ownMessageTexts(messages, ownId), "instagram-dm").added;
   } catch (error) {
     result.errors.push(`Wiadomości: ${error instanceof Error ? error.message : String(error)}`);
   }

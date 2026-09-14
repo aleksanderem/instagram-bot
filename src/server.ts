@@ -24,7 +24,7 @@ import {
 } from "./db.js";
 import { importAccountContent } from "./ingest.js";
 import { privacyPolicyHtml, termsOfServiceHtml } from "./legal.js";
-import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, parseWebhook, replyToComment, sendMessage } from "./meta.js";
+import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, subscribeToWebhooks, parseWebhook, replyToComment, sendMessage } from "./meta.js";
 import { validateDraft } from "./policy.js";
 import { generateBrandProfile } from "./profile.js";
 import type { EffectiveSettings } from "./settings.js";
@@ -55,7 +55,10 @@ app.get("/auth/instagram/callback", async (req, res) => {
     const account = await getInstagramAccount(token.access_token);
     const allowed = getEffectiveSettings().allowedInstagramAccountIds;
     if (allowed.size && !allowed.has(account.id)) return res.status(403).send("This Instagram account is not allowed.");
-    upsertAccount(account.id, account.username, encrypt(token.access_token));
+    upsertAccount(account.id, account.username, encrypt(token.access_token), account.user_id);
+    await subscribeToWebhooks(account.id, token.access_token)
+      .then((result) => console.log("Instagram webhook subscription", result))
+      .catch((error) => console.error("Instagram webhook subscription failed", error));
     void importAccountContent(account.id)
       .then((imported) => console.log("Instagram content import finished", imported))
       .catch((error) => console.error("Instagram content import failed", error));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownCommentTexts, ownMessageTexts } from "./ingest.js";
+import { ownCommentTexts, ownContentId, ownMessageTexts } from "./ingest.js";
 
 const ACCOUNT = "17841400000000000";
 
@@ -29,5 +29,15 @@ describe("ownMessageTexts", () => {
       { from: { id: ACCOUNT }, message: "" }
     ];
     expect(ownMessageTexts(messages, ACCOUNT)).toEqual(["Tak, zapraszamy w sobotę o 12:00."]);
+  });
+});
+
+describe("ownContentId", () => {
+  it("uses the Instagram user id that signs the account's own posts and replies", () => {
+    expect(ownContentId({ instagram_id: "28223724180619255", ig_user_id: "17841464783600697" })).toBe("17841464783600697");
+  });
+
+  it("falls back to the stored id when the user id is not known yet", () => {
+    expect(ownContentId({ instagram_id: "28223724180619255", ig_user_id: null })).toBe("28223724180619255");
   });
 });

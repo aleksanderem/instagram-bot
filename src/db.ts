@@ -4,7 +4,15 @@ import { config } from "./config.js";
 import { effectiveSettings, type EffectiveSettings, type StoredSettings } from "./settings.js";
 import type { Channel, ReviewStatus } from "./types.js";
 
-type Account = { instagram_id: string; username: string | null; encrypted_access_token: string; created_at: string; updated_at: string };
+type Account = {
+  instagram_id: string;
+  /** The id Instagram signs the account's own posts, comments and DMs with; differs from instagram_id. */
+  ig_user_id?: string | null;
+  username: string | null;
+  encrypted_access_token: string;
+  created_at: string;
+  updated_at: string;
+};
 type Inbound = { external_id: string; account_id: string; channel: Channel; sender_id: string; text: string; reply_to_id: string | null; received_at: string };
 type Review = { id: number; external_id: string; draft_text: string; status: ReviewStatus; reason: string | null; created_at: string; updated_at: string };
 type Sample = { id: number; text: string; source: string; added_at: string };
@@ -36,11 +44,17 @@ function save() {
   renameSync(tempPath, databasePath);
 }
 
-export function upsertAccount(instagramId: string, username: string | undefined, encryptedAccessToken: string) {
+export function upsertAccount(
+  instagramId: string,
+  username: string | undefined,
+  encryptedAccessToken: string,
+  igUserId?: string | null
+) {
   const now = new Date().toISOString();
   const previous = store.accounts[instagramId];
   store.accounts[instagramId] = {
     instagram_id: instagramId,
+    ig_user_id: igUserId ?? previous?.ig_user_id ?? null,
     username: username ?? null,
     encrypted_access_token: encryptedAccessToken,
     created_at: previous?.created_at ?? now,
@@ -49,8 +63,16 @@ export function upsertAccount(instagramId: string, username: string | undefined,
   save();
 }
 
+/**
+ * Webhooks identify the account by its Instagram user id, while the account is
+ * stored under the id returned by the login flow. Accept either.
+ */
+export function findAccountByAnyId(accounts: Record<string, Account>, id: string) {
+  return accounts[id] ?? Object.values(accounts).find((account) => account.ig_user_id === id);
+}
+
 export function getAccount(instagramId: string) {
-  return store.accounts[instagramId];
+  return findAccountByAnyId(store.accounts, instagramId);
 }
 
 export function insertInbound(event: { externalId: string; accountId: string; channel: Channel; senderId: string; text: string; replyToId?: string }) {

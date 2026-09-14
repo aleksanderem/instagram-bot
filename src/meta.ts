@@ -30,65 +30,36 @@ export async function exchangeCode(code: string) {
   if (!response.ok) throw new Error(`Meta OAuth failed: ${await response.text()}`);
   const shortLived = parseShortLivedToken(await response.json());
   console.log("Instagram short-lived token received", describeToken(shortLived.access_token));
-  await probeShortLivedToken(shortLived.access_token);
   return exchangeForLongLivedToken(shortLived.access_token);
 }
 
-/** DIAGNOSTIC: is the short-lived token usable at all on graph.instagram.com? */
-async function probeShortLivedToken(token: string) {
-  const url = new URL(`${graphBase()}/me`);
-  url.searchParams.set("fields", "id,username");
-  url.searchParams.set("access_token", token);
-  const response = await fetch(url);
-  const body = (await response.text()).replaceAll(token, "<short-lived-token>").slice(0, 200);
-  console.log("DIAG /me probe", { status: response.status, body });
-}
-
 /**
- * DIAGNOSTIC: Meta rejects the documented GET with "Unsupported request - method type: get".
- * Try the plausible variants once, log the outcome of each, use the first that works.
+ * The documented exchange (GET graph.instagram.com/access_token) intermittently
+ * answered "Unsupported request"; the identical call succeeded minutes later,
+ * so a single retry against the versioned path guards against that.
  */
 async function exchangeForLongLivedToken(token: string) {
-  const secret = config.META_APP_SECRET!;
-  const query = `grant_type=ig_exchange_token&client_secret=${encodeURIComponent(secret)}&access_token=${encodeURIComponent(token)}`;
-  const variants = [
-    { name: "GET /access_token (documented)", url: `https://graph.instagram.com/access_token?${query}`, init: {} },
-    { name: "GET /<version>/access_token", url: `${graphBase()}/access_token?${query}`, init: {} },
-    {
-      name: "POST /access_token (form body)",
-      url: "https://graph.instagram.com/access_token",
-      init: {
-        method: "POST",
-        body: new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: secret, access_token: token })
-      }
-    },
-    {
-      name: "GET /access_token + Bearer header",
-      url: `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(secret)}`,
-      init: { headers: { Authorization: `Bearer ${token}` } }
-    }
+  const query = new URLSearchParams({
+    grant_type: "ig_exchange_token",
+    client_secret: config.META_APP_SECRET!,
+    access_token: token
+  });
+  const attempts = [
+    { name: "graph.instagram.com/access_token", url: `https://graph.instagram.com/access_token?${query}` },
+    { name: `graph.instagram.com/${config.META_GRAPH_API_VERSION}/access_token`, url: `${graphBase()}/access_token?${query}` }
   ];
 
-  const redact = (text: string) =>
-    text
-      .replaceAll(secret, "<secret>")
-      .replaceAll(token, "<short-lived-token>")
-      .replace(/"access_token"\s*:\s*"[^"]*"/g, '"access_token":"<redacted>"')
-      .replace(/(access_token|client_secret)=[^&\s"]+/g, "$1=<redacted>")
-      .replace(/\bIG[A-Za-z0-9_-]{20,}/g, "<token>");
-
   const failures: string[] = [];
-  for (const variant of variants) {
-    const response = await fetch(variant.url, variant.init as RequestInit);
-    const text = await response.text();
+  for (const attempt of attempts) {
+    const response = await fetch(attempt.url);
     if (response.ok) {
-      console.log("DIAG WORKING VARIANT:", variant.name, { status: response.status });
-      return JSON.parse(text) as { access_token: string; user_id?: string };
+      console.log("Instagram long-lived token obtained", { via: attempt.name });
+      return (await response.json()) as { access_token: string; user_id?: string };
     }
-    const safeBody = redact(text).slice(0, 200);
-    console.log("DIAG long-lived variant failed", { variant: variant.name, status: response.status, body: safeBody });
-    failures.push(`${variant.name} -> ${response.status} ${safeBody.slice(0, 120)}`);
+    const detail = redactSecrets(await response.text(), token).slice(0, 160);
+    failures.push(`${attempt.name} -> ${response.status} ${detail}`);
   }
+  console.error("Instagram long-lived exchange failed", { attempts: failures });
   throw new Error(`Meta token exchange failed: ${failures.join(" | ")}`);
 }
 
@@ -109,15 +80,32 @@ export function parseShortLivedToken(payload: unknown): { access_token: string; 
     : { access_token: accessToken, user_id: String(userId) };
 }
 
+/** Tell Instagram to deliver this account's messages and comments to our webhook. */
+export async function subscribeToWebhooks(accountId: string, accessToken: string) {
+  const url = new URL(`${graphBase()}/${accountId}/subscribed_apps`);
+  url.searchParams.set("subscribed_fields", "messages,comments");
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url, { method: "POST" });
+  const body = redactSecrets(await response.text(), accessToken).slice(0, 200);
+  if (!response.ok) throw new Error(`Instagram webhook subscription failed: ${body}`);
+  return body;
+}
+
+const redactSecrets = (text: string, token: string) =>
+  text
+    .replaceAll(config.META_APP_SECRET ?? "\u0000", "<secret>")
+    .replaceAll(token, "<token>")
+    .replace(/(access_token|client_secret)=[^&\s"]+/g, "$1=<redacted>");
+
 const describeToken = (token: string) => ({ length: token.length, prefix: token.slice(0, 6) });
 
 export async function getInstagramAccount(accessToken: string) {
   const url = new URL(`${graphBase()}/me`);
-  url.searchParams.set("fields", "id,username");
+  url.searchParams.set("fields", "id,user_id,username");
   url.searchParams.set("access_token", accessToken);
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Could not read Instagram account: ${await response.text()}`);
-  return (await response.json()) as { id: string; username?: string };
+  return (await response.json()) as { id: string; user_id?: string; username?: string };
 }
 
 export async function sendMessage(accountId: string, recipientId: string, text: string, accessToken: string) {

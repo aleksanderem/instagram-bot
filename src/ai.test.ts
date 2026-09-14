@@ -67,3 +67,17 @@ describe("buildDraftMessages", () => {
     expect(prompt).toContain("Ile trwa konsultacja?");
   });
 });
+
+describe("buildDraftMessages — kontekst posta i bezpieczeństwo", () => {
+  it("tells the model what the comment sits under", () => {
+    const prompt = buildDraftMessages("Przy ADHD nic nie daje XD", "comment", [], "księga", "Post o tym, jak stymulanty działają przy ADHD")
+      .map((m) => m.content)
+      .join("\n");
+    expect(prompt).toContain("Post o tym, jak stymulanty działają przy ADHD");
+  });
+
+  it("never lets the model nudge anyone towards taking something", () => {
+    const prompt = buildDraftMessages("Przy ADHD nic nie daje XD", "comment", [], "księga", "").map((m) => m.content).join("\n");
+    expect(prompt).toMatch(/nie sugeruj.*(si[ęe]gni|spr[óo]bowan|za[żz]y|brani)/i);
+  });
+});

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
 import { getEffectiveSettings, listPairs } from "./db.js";
-import { fallbackDraft, isProvocative, requiresHuman, validateDraft } from "./policy.js";
+import { fallbackDraft, isProvocative, needsHumanApproval, requiresHuman, validateDraft } from "./policy.js";
 import { findSimilarPairs } from "./similar.js";
 import type { Channel, ConversationPair, Draft } from "./types.js";
 
@@ -34,6 +34,17 @@ Dozwolone emoji i znaki: 🍀 ❤️ 😉 😘 🤣 oraz :) i ;) — najwyżej j
 Nie używaj wielokropka. Nie używaj słowa "zdrowienie" ani innych słów z języka pisanego.
 `;
 
+const SAFETY_RULE = `
+Nigdy nie sugeruj sięgnięcia po substancję, spróbowania jej, zmiany dawki ani sposobu brania.
+Nie pytaj "próbowałaś?", "brałeś?" ani podobnie tam, gdzie mowa o substancjach — takie pytanie czyta się jak zachęta.
+Nie oceniaj, czy coś "działa" czy "nie działa". Przy pytaniach o branie kieruj do kontaktu z zespołem.
+`;
+
+const postContextSection = (post: string) =>
+  post
+    ? `Komentarz jest pod postem marki o treści:\n${post.slice(0, 2_000)}\n\nCzytaj komentarz w kontekście tego posta — te same słowa pod innym postem znaczą co innego.`
+    : "";
+
 const MAX_SIMILAR_PAIRS = 5;
 
 const pastAnswersSection = (pairs: ConversationPair[]) =>
@@ -48,12 +59,15 @@ export function buildDraftMessages(
   text: string,
   channel: Channel,
   pairs: ConversationPair[],
-  brand: string
+  brand: string,
+  postContext = ""
 ): Array<{ role: string; content: string }> {
   const similar = findSimilarPairs(pairs, text, MAX_SIMILAR_PAIRS);
   const system = [
     knowledgeBase,
+    SAFETY_RULE,
     `Księga marki:\n${brand}`,
+    postContextSection(postContext),
     pastAnswersSection(similar),
     isProvocative(text) ? PROVOCATION_RULE : ""
   ]
@@ -98,23 +112,22 @@ export async function chatCompletion(messages: Array<{ role: string; content: st
   return text;
 }
 
-export async function createDraft(text: string, channel: Channel): Promise<Draft> {
+export async function createDraft(text: string, channel: Channel, postContext = ""): Promise<Draft> {
   const escalationReason = requiresHuman(text);
   if (escalationReason) return fallbackDraft(channel, escalationReason);
   if (!config.MINIMAX_API_KEY) return fallbackDraft(channel);
 
   try {
     const output = await chatCompletion(
-      buildDraftMessages(text, channel, listPairs(), brandContext()),
+      buildDraftMessages(text, channel, listPairs(), brandContext(), postContext),
       getEffectiveSettings().aiModel
     );
     const draft = parseDraftJson(output);
     const issue = validateDraft(draft.text, channel);
     if (issue) return fallbackDraft(channel, issue);
-    // A taunt may never go out automatically, however confident the model is.
-    if (isProvocative(text)) {
-      return { ...draft, shouldEscalate: true, reason: draft.reason ?? "Zaczepka — odpowiedź wymaga zatwierdzenia." };
-    }
+    // Taunts and anything touching drug use wait for a person, however confident the model is.
+    const approvalReason = needsHumanApproval(text);
+    if (approvalReason) return { ...draft, shouldEscalate: true, reason: draft.reason ?? approvalReason };
     return draft;
   } catch {
     return fallbackDraft(channel, "Nie udało się bezpiecznie wygenerować odpowiedzi.");

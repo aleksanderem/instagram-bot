@@ -33,3 +33,19 @@ describe("short-lived token response", () => {
     expect(() => parseShortLivedToken({ data: [] })).toThrow(/short-lived/i);
   });
 });
+
+describe("parseWebhook — kontekst posta", () => {
+  it("keeps the id of the post a comment sits under", () => {
+    const [event] = parseWebhook({
+      entry: [{ id: "ig-1", changes: [{ field: "comments", value: { id: "c-1", text: "Przy ADHD nic nie daje XD", from: { id: "p-1" }, media: { id: "media-9" } } }] }]
+    });
+    expect(event.mediaId).toBe("media-9");
+  });
+
+  it("still works when Instagram sends no post information", () => {
+    const [event] = parseWebhook({
+      entry: [{ id: "ig-1", changes: [{ field: "comments", value: { id: "c-1", text: "Super!", from: { id: "p-1" } } }] }]
+    });
+    expect(event.mediaId).toBeUndefined();
+  });
+});

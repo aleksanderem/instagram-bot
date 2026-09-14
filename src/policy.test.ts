@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requiresHuman, validateDraft, isProvocative } from "./policy.js";
+import { requiresHuman, validateDraft, isProvocative, needsHumanApproval }  from "./policy.js";
 
 describe("tone and safety policy", () => {
   it("routes sensitive cases to a human", () => {
@@ -30,5 +30,24 @@ describe("isProvocative", () => {
 
   it("leaves a serious question about addiction alone", () => {
     expect(isProvocative("Biorę mefedron od roku i chcę przestać, od czego zacząć?")).toBe(false);
+  });
+});
+
+describe("needsHumanApproval", () => {
+  it("holds back a taunt", () => {
+    expect(needsHumanApproval("Przecież lubiłaś się grzać po mefedronie")).toMatch(/zaczepk/i);
+  });
+
+  it("holds back talk about doses and how to take something", () => {
+    expect(needsHumanApproval("pusty żołądek, godzinę przed 100 kamy i lecisz 😅")).toMatch(/substancj/i);
+    expect(needsHumanApproval("ile trzeba wziąć żeby coś poczuć?")).toMatch(/substancj/i);
+  });
+
+  it("holds back claims that nothing works, which invite a dosing answer", () => {
+    expect(needsHumanApproval("Przy ADHD nic nie daje XD")).toMatch(/substancj/i);
+  });
+
+  it("lets an ordinary question through", () => {
+    expect(needsHumanApproval("Czy jest możliwa konsultacja online i ile kosztuje?")).toBeUndefined();
   });
 });

@@ -13,7 +13,7 @@ type Account = {
   created_at: string;
   updated_at: string;
 };
-type Inbound = { external_id: string; account_id: string; channel: Channel; sender_id: string; text: string; reply_to_id: string | null; received_at: string };
+type Inbound = { external_id: string; account_id: string; channel: Channel; sender_id: string; text: string; reply_to_id: string | null; media_id: string | null; received_at: string };
 type Review = { id: number; external_id: string; draft_text: string; status: ReviewStatus; reason: string | null; created_at: string; updated_at: string };
 type Sample = { id: number; text: string; source: string; added_at: string };
 type Store = {
@@ -25,12 +25,14 @@ type Store = {
   samples: Sample[];
   nextSampleId: number;
   pairs: ConversationPair[];
+  /** Post id -> caption, so a comment can be read together with what it sits under. */
+  media: Record<string, string>;
 };
 
 const databasePath = config.DATABASE_PATH;
 mkdirSync(dirname(databasePath), { recursive: true });
 
-const emptyStore = (): Store => ({ accounts: {}, inbound: {}, reviews: [], nextReviewId: 1, settings: {}, samples: [], nextSampleId: 1, pairs: [] });
+const emptyStore = (): Store => ({ accounts: {}, inbound: {}, reviews: [], nextReviewId: 1, settings: {}, samples: [], nextSampleId: 1, pairs: [], media: {} });
 
 function load(): Store {
   if (!existsSync(databasePath)) return emptyStore();
@@ -76,7 +78,7 @@ export function getAccount(instagramId: string) {
   return findAccountByAnyId(store.accounts, instagramId);
 }
 
-export function insertInbound(event: { externalId: string; accountId: string; channel: Channel; senderId: string; text: string; replyToId?: string }) {
+export function insertInbound(event: { externalId: string; accountId: string; channel: Channel; senderId: string; text: string; replyToId?: string; mediaId?: string }) {
   if (store.inbound[event.externalId]) return false;
   store.inbound[event.externalId] = {
     external_id: event.externalId,
@@ -85,6 +87,7 @@ export function insertInbound(event: { externalId: string; accountId: string; ch
     sender_id: event.senderId,
     text: event.text,
     reply_to_id: event.replyToId ?? null,
+    media_id: event.mediaId ?? null,
     received_at: new Date().toISOString()
   };
   save();
@@ -171,6 +174,17 @@ export function addPairs(pairs: ConversationPair[]): { added: number } {
 
 export function listPairs(): ConversationPair[] {
   return store.pairs;
+}
+
+
+export function rememberMedia(mediaId: string, caption: string) {
+  if (!caption.trim() || store.media[mediaId] === caption) return;
+  store.media = { ...store.media, [mediaId]: caption };
+  save();
+}
+
+export function getMediaCaption(mediaId: string): string {
+  return store.media[mediaId] ?? "";
 }
 
 export function listAccounts() {

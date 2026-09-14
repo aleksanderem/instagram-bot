@@ -136,6 +136,18 @@ async function metaGet(url: URL, accessToken: string) {
   return response.json() as Promise<{ data?: Array<Record<string, any>> }>;
 }
 
+
+/** The caption of a single post, needed when a comment arrives under a post we have not imported. */
+export async function fetchMediaCaption(mediaId: string, accessToken: string): Promise<string> {
+  const url = new URL(`${graphBase()}/${mediaId}`);
+  url.searchParams.set("fields", "caption");
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Could not read post: ${await response.text()}`);
+  const { caption } = (await response.json()) as { caption?: string };
+  return caption ?? "";
+}
+
 export async function fetchOwnMedia(accessToken: string) {
   const url = new URL(`${graphBase()}/me/media`);
   url.searchParams.set("fields", "id,caption,media_type,timestamp");
@@ -194,7 +206,8 @@ export function parseWebhook(payload: unknown): InboundEvent[] {
           channel: "comment",
           senderId: String(senderId),
           text: String(text),
-          replyToId: String(commentId)
+          replyToId: String(commentId),
+          ...(value.media?.id ? { mediaId: String(value.media.id) } : {})
         });
       }
     }

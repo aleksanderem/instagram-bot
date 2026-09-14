@@ -8,6 +8,8 @@ export interface InboundEvent {
   senderId: string;
   text: string;
   replyToId?: string;
+  /** The post a comment sits under; a comment read without it can be answered dangerously. */
+  mediaId?: string;
 }
 
 export interface Draft {

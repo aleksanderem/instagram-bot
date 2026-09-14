@@ -1,6 +1,6 @@
 import { decrypt } from "./crypto.js";
-import { addPairs, addSamples, getAccount, upsertAccount } from "./db.js";
-import { fetchConversationMessages, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
+import { addPairs, addSamples, getAccount, getMediaCaption, rememberMedia, upsertAccount } from "./db.js";
+import { fetchConversationMessages, fetchMediaCaption, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
 import type { ConversationPair } from "./types.js";
 
 type CommentNode = { id?: unknown; parent_id?: unknown; text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
@@ -127,6 +127,26 @@ async function ensureOwnContentId(account: { instagram_id: string; ig_user_id?: 
   return fresh.user_id;
 }
 
+
+/**
+ * The caption of the post a comment sits under. Comments usually arrive on posts
+ * fresher than the last import, so an unknown post is fetched once and kept.
+ */
+export async function resolvePostContext(accountId: string, mediaId: string | null | undefined): Promise<string> {
+  if (!mediaId) return "";
+  const known = getMediaCaption(mediaId);
+  if (known) return known;
+  const account = getAccount(accountId);
+  if (!account) return "";
+  try {
+    const caption = await fetchMediaCaption(mediaId, decrypt(account.encrypted_access_token));
+    rememberMedia(mediaId, caption);
+    return caption;
+  } catch {
+    return "";
+  }
+}
+
 export async function importAccountContent(accountId: string): Promise<ImportResult> {
   const account = getAccount(accountId);
   if (!account) throw new Error("Instagram account is not connected.");
@@ -138,6 +158,7 @@ export async function importAccountContent(accountId: string): Promise<ImportRes
   try {
     const media = await fetchOwnMedia(token);
     mediaIds = media.map((item) => item.id);
+    for (const item of media) rememberMedia(item.id, String(item.caption ?? ""));
     const captions = media.map((item) => item.caption).filter(Boolean);
     result.posts = addSamples(captions, "instagram-post").added;
   } catch (error) {

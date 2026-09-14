@@ -37,6 +37,37 @@ export function isProvocative(text: string): boolean {
   return PROVOCATION_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+
+/**
+ * Talk about doses, ways of taking something or what "works" invites an answer
+ * that reads as advice on using. A human decides on those, always.
+ */
+const SUBSTANCE_USE_PATTERNS = [
+  /\b\d+\s?(mg|g|gram\w*|kam\w*)\b/i,
+  /dawk\w*/i,
+  /ile\s+(trzeba\s+)?(wzi(ąć|ac)|bra(ć|c)|sypa(ć|c)|wciąg\w*)/i,
+  /kresk\w*/i,
+  /wci(ą|a)g\w*/i,
+  /pusty\s+(żołądek|zoladek)/i,
+  /(łączy|laczy)(ć|c)\s+z\b/i,
+  /miksow\w*/i,
+  /nic\s+nie\s+daje/i,
+  /nie\s+dzia(ł|l)a\s+na\s+mnie/i,
+  /co\s+(najlepiej\s+)?dzia(ł|l)a/i,
+  /(bad\s?trip|odlot|zejści|zejsci)\w*/i
+];
+
+export function mentionsSubstanceUse(text: string): boolean {
+  return SUBSTANCE_USE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/** Why this message may not be answered automatically, if it may not. */
+export function needsHumanApproval(text: string): string | undefined {
+  if (isProvocative(text)) return "Zaczepka — odpowiedź wymaga zatwierdzenia.";
+  if (mentionsSubstanceUse(text)) return "Komentarz dotyczy brania substancji — wymaga zatwierdzenia.";
+  return undefined;
+}
+
 export function requiresHuman(text: string): string | undefined {
   const matching = ESCALATION_PATTERNS.find((pattern) => pattern.test(text));
   return matching ? "Wiadomość dotyczy sprawy wymagającej obsługi przez człowieka." : undefined;

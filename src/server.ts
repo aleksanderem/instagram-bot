@@ -23,7 +23,7 @@ import {
   replaceDraft,
   upsertAccount
 } from "./db.js";
-import { importAccountContent } from "./ingest.js";
+import { importAccountContent, resolvePostContext } from "./ingest.js";
 import { privacyPolicyHtml, termsOfServiceHtml } from "./legal.js";
 import { buildAuthorizationUrl, exchangeCode, getInstagramAccount, subscribeToWebhooks, parseWebhook, replyToComment, sendMessage } from "./meta.js";
 import { validateDraft } from "./policy.js";
@@ -113,7 +113,7 @@ app.post("/api/reviews/:id/regenerate", async (req, res) => {
   if (!review) return res.sendStatus(404);
   if (review.status === "sent") return res.status(409).json({ error: "Ta odpowiedź została już wysłana." });
   try {
-    const draft = await createDraft(review.text, review.channel);
+    const draft = await createDraft(review.text, review.channel, await resolvePostContext(review.account_id, review.media_id));
     replaceDraft(review.id, draft.text, draft.reason ?? null);
     res.json({ ok: true, text: draft.text, reason: draft.reason ?? null });
   } catch (error) {
@@ -232,7 +232,7 @@ async function processInboundWebhook(payload: unknown) {
     if (event.channel === "dm" && !settings.respondToDms) continue;
     if (event.channel === "comment" && !settings.respondToComments) continue;
     if (!insertInbound(event)) continue; // delivery retries must not create duplicate replies
-    const draft = await createDraft(event.text, event.channel);
+    const draft = await createDraft(event.text, event.channel, await resolvePostContext(event.accountId, event.mediaId));
     const draftIssue = validateDraft(draft.text, event.channel);
     const status = draft.shouldEscalate || draftIssue || draft.confidence !== "high" ? "pending" : "approved";
     createReview(event.externalId, draft.text, status, draft.reason ?? draftIssue);

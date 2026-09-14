@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWebhook } from "./meta.js";
+import { parseShortLivedToken, parseWebhook } from "./meta.js";
 
 describe("Instagram webhook parser", () => {
   it("extracts a DM", () => {
@@ -12,5 +12,24 @@ describe("Instagram webhook parser", () => {
     expect(parseWebhook({ entry: [{ id: "ig-1", changes: [{ field: "comments", value: { id: "c-1", text: "Super!", from: { id: "person-1" } } }] }] })).toEqual([
       { externalId: "c-1", accountId: "ig-1", channel: "comment", senderId: "person-1", text: "Super!", replyToId: "c-1" }
     ]);
+  });
+});
+
+describe("short-lived token response", () => {
+  it("reads the documented data[] shape returned by Instagram Business Login", () => {
+    expect(
+      parseShortLivedToken({ data: [{ access_token: "IGAA-short", user_id: 178414, permissions: "instagram_business_basic" }] })
+    ).toEqual({ access_token: "IGAA-short", user_id: "178414" });
+  });
+
+  it("reads the flat shape", () => {
+    expect(parseShortLivedToken({ access_token: "IGAA-short", user_id: "178414" })).toEqual({
+      access_token: "IGAA-short",
+      user_id: "178414"
+    });
+  });
+
+  it("fails with a readable message when no token is present", () => {
+    expect(() => parseShortLivedToken({ data: [] })).toThrow(/short-lived/i);
   });
 });

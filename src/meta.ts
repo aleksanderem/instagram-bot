@@ -28,15 +28,41 @@ export async function exchangeCode(code: string) {
   });
   const response = await fetch("https://api.instagram.com/oauth/access_token", { method: "POST", body });
   if (!response.ok) throw new Error(`Meta OAuth failed: ${await response.text()}`);
-  const shortLived = (await response.json()) as { access_token: string; user_id?: string };
+  const shortLived = parseShortLivedToken(await response.json());
+  console.log("Instagram short-lived token received", describeToken(shortLived.access_token));
   const longLivedUrl = new URL("https://graph.instagram.com/access_token");
   longLivedUrl.searchParams.set("grant_type", "ig_exchange_token");
   longLivedUrl.searchParams.set("client_secret", config.META_APP_SECRET!);
   longLivedUrl.searchParams.set("access_token", shortLived.access_token);
   const longLivedResponse = await fetch(longLivedUrl);
-  if (!longLivedResponse.ok) throw new Error(`Meta token exchange failed: ${await longLivedResponse.text()}`);
+  if (!longLivedResponse.ok) {
+    console.error("Instagram long-lived exchange failed", {
+      status: longLivedResponse.status,
+      shortLived: describeToken(shortLived.access_token)
+    });
+    throw new Error(`Meta token exchange failed: ${await longLivedResponse.text()}`);
+  }
   return (await longLivedResponse.json()) as { access_token: string; user_id?: string };
 }
+
+/**
+ * Instagram Business Login wraps the short-lived token in a `data` array,
+ * while the older flow returned it flat. Accept both and fail loudly otherwise.
+ */
+export function parseShortLivedToken(payload: unknown): { access_token: string; user_id?: string } {
+  const record = payload as { data?: Array<Record<string, unknown>> } & Record<string, unknown>;
+  const entry = Array.isArray(record?.data) ? record.data[0] : record;
+  const accessToken = entry?.access_token;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    throw new Error(`Instagram returned no short-lived access token (keys: ${Object.keys(record ?? {}).join(",") || "none"})`);
+  }
+  const userId = entry?.user_id;
+  return userId === undefined || userId === null
+    ? { access_token: accessToken }
+    : { access_token: accessToken, user_id: String(userId) };
+}
+
+const describeToken = (token: string) => ({ length: token.length, prefix: token.slice(0, 6) });
 
 export async function getInstagramAccount(accessToken: string) {
   const url = new URL(`${graphBase()}/me`);

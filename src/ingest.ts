@@ -107,7 +107,8 @@ export type ImportResult = {
   errors: string[];
 };
 
-const MAX_MEDIA_FOR_COMMENTS = 25;
+// High enough to cover a whole profile; a guard only against pathologically large accounts.
+const MAX_MEDIA_FOR_COMMENTS = 200;
 
 /**
  * Instagram signs the account's own posts, comments and DMs with its user id,

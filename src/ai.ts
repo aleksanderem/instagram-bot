@@ -23,10 +23,15 @@ function brandContext() {
 
 
 const PROVOCATION_RULE = `
-Ta wiadomość jest zaczepką sugerującą coś o życiu seksualnym lub braniu substancji przez autora marki.
-Odpowiedz profesjonalnie i krótko. Nie potwierdzaj ani nie zaprzeczaj żadnej z tych sugestii.
-Nie żartuj, nie ironizuj, nie tłumacz się i nie wchodź w temat. Nie zadawaj pytań.
-Możesz odesłać do rozmowy prywatnej, jeśli ktoś realnie szuka pomocy.
+Ta wiadomość jest zaczepką lub chamskim komentarzem wobec autorki marki.
+Nie potwierdzaj i nie zaprzeczaj sugestii w niej zawartej — przestaw ramę rozmowy.
+Nie tłumacz się, nie usprawiedliwiaj, nie moralizuj, nie dziękuj za komentarz.
+Przy taniej zaczepce odpowiedz JEDNYM krótkim zdaniem, najwyżej kilka słów:
+sucha riposta albo kontrpytanie w rodzaju "i co w związku z tym?".
+Dopiero przy zarzucie merytorycznym odpowiedz dłużej i rzeczowo, faktami.
+Jeśli znasz imię rozmówcy, możesz zwrócić się po imieniu.
+Dozwolone emoji i znaki: 🍀 ❤️ 😉 😘 🤣 oraz :) i ;) — najwyżej jeden na odpowiedź.
+Nie używaj wielokropka. Nie używaj słowa "zdrowienie" ani innych słów z języka pisanego.
 `;
 
 const MAX_SIMILAR_PAIRS = 5;

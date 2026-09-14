@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
 import { getEffectiveSettings, listPairs } from "./db.js";
-import { fallbackDraft, isProvocative, needsHumanApproval, requiresHuman, validateDraft } from "./policy.js";
+import { fallbackDraft, holdReason, isProvocative, parseRiskAssessment, requiresHuman, validateDraft } from "./policy.js";
 import { findSimilarPairs } from "./similar.js";
-import type { Channel, ConversationPair, Draft } from "./types.js";
+import type { Channel, ConversationPair, Draft, RiskAssessment } from "./types.js";
 
 const knowledgeBase = `
 Jesteś asystentem marki na Instagramie. Odpowiadasz po polsku, rzeczowo, uprzejmie i krótko.
@@ -60,7 +60,8 @@ export function buildDraftMessages(
   channel: Channel,
   pairs: ConversationPair[],
   brand: string,
-  postContext = ""
+  postContext = "",
+  flags: { taunt?: boolean } = {}
 ): Array<{ role: string; content: string }> {
   const similar = findSimilarPairs(pairs, text, MAX_SIMILAR_PAIRS);
   const system = [
@@ -69,7 +70,7 @@ export function buildDraftMessages(
     `Księga marki:\n${brand}`,
     postContextSection(postContext),
     pastAnswersSection(similar),
-    isProvocative(text) ? PROVOCATION_RULE : ""
+    isProvocative(text) || flags.taunt ? PROVOCATION_RULE : ""
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -77,6 +78,39 @@ export function buildDraftMessages(
     { role: "system", content: system },
     { role: "user", content: `Kanał: ${channel}. Wiadomość użytkownika: ${text}` }
   ];
+}
+
+const RISK_CRITERIA = `
+Oceniasz wiadomość z Instagrama skierowaną do profilu o uzależnieniach, zanim ktokolwiek na nią odpowie.
+Czytaj ją razem z postem, pod którym się pojawiła — te same słowa pod różnymi postami znaczą co innego.
+
+"taunt": true, jeśli to zaczepka, drwina, obraza lub sugestia na temat życia seksualnego albo brania substancji przez autorkę profilu.
+
+"substanceUse": true, jeśli wiadomość w jakikolwiek sposób dotyczy substancji — narkotyków, leków (także na receptę, np. sildenafil, leki nasenne, stymulanty), alkoholu —
+w kontekście ich brania, działania lub braku działania, dawek, sposobu przyjmowania, łączenia, jakości, ceny, zdobywania albo seksu pod ich wpływem,
+także żartem lub mimochodem. Również wtedy, gdy każda odpowiedź mogłaby zostać odczytana jako ocena, rada lub zachęta dotycząca brania.
+
+W razie wątpliwości ustaw true. Odpowiadasz WYŁĄCZNIE obiektem JSON:
+{"taunt": boolean, "substanceUse": boolean, "reason": string | null}
+"reason" to jedno krótkie zdanie po polsku, dlaczego.
+`;
+
+/** The prompt asking the model to judge a message before a reply is drafted. */
+export function buildRiskMessages(text: string, channel: Channel, postContext = ""): Array<{ role: string; content: string }> {
+  const post = postContext ? `Post, pod którym jest wiadomość:\n${postContext.slice(0, 2_000)}\n\n` : "";
+  return [
+    { role: "system", content: RISK_CRITERIA },
+    { role: "user", content: `${post}Kanał: ${channel}. Wiadomość: ${text}` }
+  ];
+}
+
+async function assessRisk(text: string, channel: Channel, postContext: string): Promise<RiskAssessment> {
+  try {
+    const output = await chatCompletion(buildRiskMessages(text, channel, postContext), getEffectiveSettings().aiModel);
+    return parseRiskAssessment(output);
+  } catch {
+    return { taunt: false, substanceUse: false, reason: null, failed: true };
+  }
 }
 
 type ChatCompletionsPayload = {
@@ -117,18 +151,18 @@ export async function createDraft(text: string, channel: Channel, postContext = 
   if (escalationReason) return fallbackDraft(channel, escalationReason);
   if (!config.MINIMAX_API_KEY) return fallbackDraft(channel);
 
+  const assessment = await assessRisk(text, channel, postContext);
   try {
     const output = await chatCompletion(
-      buildDraftMessages(text, channel, listPairs(), brandContext(), postContext),
+      buildDraftMessages(text, channel, listPairs(), brandContext(), postContext, { taunt: assessment.taunt }),
       getEffectiveSettings().aiModel
     );
     const draft = parseDraftJson(output);
     const issue = validateDraft(draft.text, channel);
     if (issue) return fallbackDraft(channel, issue);
-    // Taunts and anything touching drug use wait for a person, however confident the model is.
-    const approvalReason = needsHumanApproval(text);
-    if (approvalReason) return { ...draft, shouldEscalate: true, reason: draft.reason ?? approvalReason };
-    return draft;
+    // Taunts and anything touching substances wait for a person, however confident the drafting model is.
+    const hold = holdReason(text, assessment);
+    return hold ? { ...draft, shouldEscalate: true, reason: hold } : draft;
   } catch {
     return fallbackDraft(channel, "Nie udało się bezpiecznie wygenerować odpowiedzi.");
   }

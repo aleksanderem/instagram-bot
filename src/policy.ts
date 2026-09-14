@@ -1,4 +1,4 @@
-import type { Channel, Draft } from "./types.js";
+import type { Channel, Draft, RiskAssessment } from "./types.js";
 
 const ESCALATION_PATTERNS = [
   /reklamacj/i,
@@ -100,4 +100,37 @@ export function fallbackDraft(channel: Channel, escalationReason?: string): Draf
     reason: "Brak skonfigurowanego modelu AI lub pewnej odpowiedzi.",
     confidence: "low"
   };
+}
+
+const FAILED_ASSESSMENT: RiskAssessment = { taunt: false, substanceUse: false, reason: null, failed: true };
+
+/** Reads the model's verdict; anything unreadable counts as a failed assessment. */
+export function parseRiskAssessment(text: string): RiskAssessment {
+  const cleaned = text.replace(/```(?:json)?/g, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) return FAILED_ASSESSMENT;
+  try {
+    const verdict = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
+    if (typeof verdict.taunt !== "boolean" || typeof verdict.substanceUse !== "boolean") return FAILED_ASSESSMENT;
+    const reason = typeof verdict.reason === "string" && verdict.reason.trim() ? verdict.reason.trim() : null;
+    return { taunt: verdict.taunt, substanceUse: verdict.substanceUse, reason, failed: false };
+  } catch {
+    return FAILED_ASSESSMENT;
+  }
+}
+
+const withDetail = (label: string, detail: string | null) => (detail ? `${label} ${detail}` : label);
+
+/**
+ * Why a message must wait for a person. Keywords are a floor the model cannot lower;
+ * the model adds what keywords miss, and a failed assessment holds the message too.
+ */
+export function holdReason(text: string, assessment: RiskAssessment): string | undefined {
+  const byKeyword = needsHumanApproval(text);
+  if (byKeyword) return byKeyword;
+  if (assessment.failed) return "Nie udało się ocenić ryzyka wiadomości — wymaga zatwierdzenia.";
+  if (assessment.taunt) return withDetail("Zaczepka (ocena modelu) — wymaga zatwierdzenia.", assessment.reason);
+  if (assessment.substanceUse) return withDetail("Temat substancji (ocena modelu) — wymaga zatwierdzenia.", assessment.reason);
+  return undefined;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDraftMessages, extractChatText, parseDraftJson } from "./ai.js";
+import { buildDraftMessages, buildRiskMessages, extractChatText, parseDraftJson } from "./ai.js";
 
 describe("extractChatText", () => {
   it("reads the first choice's message content", () => {
@@ -79,5 +79,31 @@ describe("buildDraftMessages — kontekst posta i bezpieczeństwo", () => {
   it("never lets the model nudge anyone towards taking something", () => {
     const prompt = buildDraftMessages("Przy ADHD nic nie daje XD", "comment", [], "księga", "").map((m) => m.content).join("\n");
     expect(prompt).toMatch(/nie sugeruj.*(si[ęe]gni|spr[óo]bowan|za[żz]y|brani)/i);
+  });
+});
+
+describe("buildRiskMessages", () => {
+  const prompt = buildRiskMessages("*sildenafil istnieje*, kolega mi mówił", "comment", "Post o chemseksie").map((m) => m.content).join("\n");
+
+  it("judges the comment together with its post", () => {
+    expect(prompt).toContain("*sildenafil istnieje*, kolega mi mówił");
+    expect(prompt).toContain("Post o chemseksie");
+  });
+
+  it("counts medicines and alcohol as substances, not only street drugs", () => {
+    expect(prompt).toMatch(/lek/i);
+    expect(prompt).toMatch(/alkohol/i);
+  });
+
+  it("asks for exactly the verdict fields that are read back", () => {
+    expect(prompt).toContain('"taunt"');
+    expect(prompt).toContain('"substanceUse"');
+  });
+});
+
+describe("buildDraftMessages — zaczepka wskazana przez ocenę modelu", () => {
+  it("adds the taunt rule when the model says so, even without keywords", () => {
+    const prompt = buildDraftMessages("Xc", "comment", [], "księga", "", { taunt: true }).map((m) => m.content).join("\n");
+    expect(prompt).toMatch(/nie potwierdzaj/i);
   });
 });

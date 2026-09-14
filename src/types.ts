@@ -21,3 +21,6 @@ export interface Draft {
 
 /** A message or comment the brand received, together with the reply it wrote back. */
 export type ConversationPair = { question: string; answer: string; source: string };
+
+/** The model's judgement of a message before any reply is written. */
+export type RiskAssessment = { taunt: boolean; substanceUse: boolean; reason: string | null; failed: boolean };

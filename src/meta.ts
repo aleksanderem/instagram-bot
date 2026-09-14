@@ -30,19 +30,56 @@ export async function exchangeCode(code: string) {
   if (!response.ok) throw new Error(`Meta OAuth failed: ${await response.text()}`);
   const shortLived = parseShortLivedToken(await response.json());
   console.log("Instagram short-lived token received", describeToken(shortLived.access_token));
-  const longLivedUrl = new URL("https://graph.instagram.com/access_token");
-  longLivedUrl.searchParams.set("grant_type", "ig_exchange_token");
-  longLivedUrl.searchParams.set("client_secret", config.META_APP_SECRET!);
-  longLivedUrl.searchParams.set("access_token", shortLived.access_token);
-  const longLivedResponse = await fetch(longLivedUrl);
-  if (!longLivedResponse.ok) {
-    console.error("Instagram long-lived exchange failed", {
-      status: longLivedResponse.status,
-      shortLived: describeToken(shortLived.access_token)
-    });
-    throw new Error(`Meta token exchange failed: ${await longLivedResponse.text()}`);
+  await probeShortLivedToken(shortLived.access_token);
+  return exchangeForLongLivedToken(shortLived.access_token);
+}
+
+/** DIAGNOSTIC: is the short-lived token usable at all on graph.instagram.com? */
+async function probeShortLivedToken(token: string) {
+  const url = new URL(`${graphBase()}/me`);
+  url.searchParams.set("fields", "id,username");
+  url.searchParams.set("access_token", token);
+  const response = await fetch(url);
+  console.log("DIAG /me probe", { status: response.status, body: (await response.text()).slice(0, 200) });
+}
+
+/**
+ * DIAGNOSTIC: Meta rejects the documented GET with "Unsupported request - method type: get".
+ * Try the plausible variants once, log the outcome of each, use the first that works.
+ */
+async function exchangeForLongLivedToken(token: string) {
+  const secret = config.META_APP_SECRET!;
+  const query = `grant_type=ig_exchange_token&client_secret=${encodeURIComponent(secret)}&access_token=${encodeURIComponent(token)}`;
+  const variants = [
+    { name: "GET /access_token (documented)", url: `https://graph.instagram.com/access_token?${query}`, init: {} },
+    { name: "GET /<version>/access_token", url: `${graphBase()}/access_token?${query}`, init: {} },
+    {
+      name: "POST /access_token (form body)",
+      url: "https://graph.instagram.com/access_token",
+      init: {
+        method: "POST",
+        body: new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: secret, access_token: token })
+      }
+    },
+    {
+      name: "GET /access_token + Bearer header",
+      url: `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(secret)}`,
+      init: { headers: { Authorization: `Bearer ${token}` } }
+    }
+  ];
+
+  const failures: string[] = [];
+  for (const variant of variants) {
+    const response = await fetch(variant.url, variant.init as RequestInit);
+    const text = await response.text();
+    console.log("DIAG long-lived variant", { variant: variant.name, status: response.status, body: text.slice(0, 200) });
+    if (response.ok) {
+      console.log("DIAG WORKING VARIANT:", variant.name);
+      return JSON.parse(text) as { access_token: string; user_id?: string };
+    }
+    failures.push(`${variant.name} -> ${response.status} ${text.slice(0, 120)}`);
   }
-  return (await longLivedResponse.json()) as { access_token: string; user_id?: string };
+  throw new Error(`Meta token exchange failed: ${failures.join(" | ")}`);
 }
 
 /**

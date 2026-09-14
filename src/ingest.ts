@@ -1,6 +1,6 @@
 import { decrypt } from "./crypto.js";
-import { addPairs, addSamples, getAccount, getMediaCaption, rememberMedia, upsertAccount } from "./db.js";
-import { fetchConversationMessages, fetchMediaCaption, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
+import { addPairs, addSamples, getAccount, getMediaCaption, rememberMedia, setInboundMedia, upsertAccount } from "./db.js";
+import { fetchCommentMediaId, fetchConversationMessages, fetchMediaCaption, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
 import type { ConversationPair } from "./types.js";
 
 type CommentNode = { id?: unknown; parent_id?: unknown; text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
@@ -131,16 +131,25 @@ async function ensureOwnContentId(account: { instagram_id: string; ig_user_id?: 
 /**
  * The caption of the post a comment sits under. Comments usually arrive on posts
  * fresher than the last import, so an unknown post is fetched once and kept.
+ * Comments stored before post ids were kept get their post looked up by comment id.
  */
-export async function resolvePostContext(accountId: string, mediaId: string | null | undefined): Promise<string> {
-  if (!mediaId) return "";
-  const known = getMediaCaption(mediaId);
-  if (known) return known;
+export async function resolvePostContext(
+  accountId: string,
+  mediaId: string | null | undefined,
+  commentId?: string
+): Promise<string> {
+  if (!mediaId && !commentId) return "";
   const account = getAccount(accountId);
-  if (!account) return "";
+  if (!account) return mediaId ? getMediaCaption(mediaId) : "";
+  const token = decrypt(account.encrypted_access_token);
   try {
-    const caption = await fetchMediaCaption(mediaId, decrypt(account.encrypted_access_token));
-    rememberMedia(mediaId, caption);
+    const postId = mediaId || (await fetchCommentMediaId(commentId!, token));
+    if (!postId) return "";
+    if (!mediaId && commentId) setInboundMedia(commentId, postId);
+    const known = getMediaCaption(postId);
+    if (known) return known;
+    const caption = await fetchMediaCaption(postId, token);
+    rememberMedia(postId, caption);
     return caption;
   } catch {
     return "";

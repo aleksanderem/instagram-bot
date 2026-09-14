@@ -148,6 +148,18 @@ export async function fetchMediaCaption(mediaId: string, accessToken: string): P
   return caption ?? "";
 }
 
+
+/** The post a comment belongs to — for comments stored before the post id was kept. */
+export async function fetchCommentMediaId(commentId: string, accessToken: string): Promise<string> {
+  const url = new URL(`${graphBase()}/${commentId}`);
+  url.searchParams.set("fields", "media");
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Could not read comment: ${await response.text()}`);
+  const { media } = (await response.json()) as { media?: { id?: string } };
+  return media?.id ?? "";
+}
+
 export async function fetchOwnMedia(accessToken: string) {
   const url = new URL(`${graphBase()}/me/media`);
   url.searchParams.set("fields", "id,caption,media_type,timestamp");

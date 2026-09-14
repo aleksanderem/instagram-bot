@@ -177,6 +177,15 @@ export function listPairs(): ConversationPair[] {
 }
 
 
+
+/** Records which post an already stored comment belongs to. */
+export function setInboundMedia(externalId: string, mediaId: string) {
+  const inbound = store.inbound[externalId];
+  if (!inbound || inbound.media_id === mediaId) return;
+  store.inbound = { ...store.inbound, [externalId]: { ...inbound, media_id: mediaId } };
+  save();
+}
+
 export function rememberMedia(mediaId: string, caption: string) {
   if (!caption.trim() || store.media[mediaId] === caption) return;
   store.media = { ...store.media, [mediaId]: caption };

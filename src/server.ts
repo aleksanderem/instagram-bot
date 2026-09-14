@@ -113,7 +113,7 @@ app.post("/api/reviews/:id/regenerate", async (req, res) => {
   if (!review) return res.sendStatus(404);
   if (review.status === "sent") return res.status(409).json({ error: "Ta odpowiedź została już wysłana." });
   try {
-    const draft = await createDraft(review.text, review.channel, await resolvePostContext(review.account_id, review.media_id));
+    const draft = await createDraft(review.text, review.channel, await resolvePostContext(review.account_id, review.media_id, review.channel === "comment" ? review.external_id : undefined));
     replaceDraft(review.id, draft.text, draft.reason ?? null);
     res.json({ ok: true, text: draft.text, reason: draft.reason ?? null });
   } catch (error) {

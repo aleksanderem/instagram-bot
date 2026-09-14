@@ -91,3 +91,31 @@ describe("ownMessagePairs", () => {
     expect(ownMessagePairs([{ from: { id: ACCOUNT }, message: "Cześć!", created_time: "2026-09-14T10:00:01+0000" }], ACCOUNT)).toEqual([]);
   });
 });
+
+describe("ownCommentPairs — odpowiedzi wskazane przez parent_id", () => {
+  it("pairs our reply with the comment it points at", () => {
+    const comments = [
+      { id: "c1", text: "Przecież lubiłaś się grzać po mefedronie", from: { id: "999" } },
+      { id: "c2", parent_id: "c1", text: "@ktos Nie komentuję takich sugestii.", from: { id: ACCOUNT } }
+    ];
+    expect(ownCommentPairs(comments, ACCOUNT)).toEqual([
+      { question: "Przecież lubiłaś się grzać po mefedronie", answer: "Nie komentuję takich sugestii.", source: "instagram-comment" }
+    ]);
+  });
+
+  it("ignores a reply whose parent is our own comment", () => {
+    const comments = [
+      { id: "c1", text: "Nasz komentarz", from: { id: ACCOUNT } },
+      { id: "c2", parent_id: "c1", text: "@ktos dzięki", from: { id: ACCOUNT } }
+    ];
+    expect(ownCommentPairs(comments, ACCOUNT)).toEqual([]);
+  });
+
+  it("drops answers that carry no words", () => {
+    const comments = [
+      { id: "c1", text: "Świetny profil, gratuluję", from: { id: "999" } },
+      { id: "c2", parent_id: "c1", text: "🤣🤣🤣", from: { id: ACCOUNT } }
+    ];
+    expect(ownCommentPairs(comments, ACCOUNT)).toEqual([]);
+  });
+});

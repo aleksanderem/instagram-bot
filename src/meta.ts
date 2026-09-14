@@ -146,7 +146,7 @@ export async function fetchOwnMedia(accessToken: string) {
 
 export async function fetchMediaComments(mediaId: string, accessToken: string) {
   const url = new URL(`${graphBase()}/${mediaId}/comments`);
-  url.searchParams.set("fields", "id,text,from,username,replies{text,from,username}");
+  url.searchParams.set("fields", "id,text,from,username,parent_id,replies{id,text,from,username}");
   url.searchParams.set("limit", "50");
   const { data } = await metaGet(url, accessToken);
   return data ?? [];

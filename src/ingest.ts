@@ -3,7 +3,7 @@ import { addPairs, addSamples, getAccount, upsertAccount } from "./db.js";
 import { fetchConversationMessages, fetchMediaComments, fetchOwnMedia, getInstagramAccount } from "./meta.js";
 import type { ConversationPair } from "./types.js";
 
-type CommentNode = { text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
+type CommentNode = { id?: unknown; parent_id?: unknown; text?: unknown; from?: { id?: unknown }; replies?: { data?: CommentNode[] } };
 type MessageNode = { from?: { id?: unknown }; message?: unknown; created_time?: unknown };
 
 // Comments and replies written by the profile itself (its own voice).
@@ -33,17 +33,40 @@ export function ownMessageTexts(messages: MessageNode[], accountId: string): str
 
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
-/** Comments from other people together with the reply the account wrote underneath. */
+// Replies open with the handle of the person being answered, which says nothing about tone.
+const stripLeadingMention = (text: string) => text.replace(/^(@[\w.]+\s+)+/, "").trim();
+
+// Emoji-only reactions teach the model nothing about how to answer.
+const carriesWords = (text: string) => /\p{L}{2,}/u.test(text);
+
+const asAnswer = (text: unknown) => {
+  const answer = stripLeadingMention(cleanText(text));
+  return carriesWords(answer) ? answer : "";
+};
+
+/**
+ * Comments from other people together with the reply the account wrote back.
+ * Instagram returns the account's replies as ordinary comments pointing at their
+ * parent, and occasionally nested under it, so both shapes are read.
+ */
 export function ownCommentPairs(comments: CommentNode[], accountId: string): ConversationPair[] {
+  const byId = new Map(comments.filter((comment) => comment.id).map((comment) => [String(comment.id), comment]));
+  const isOurs = (comment: CommentNode) => String(comment.from?.id ?? "") === accountId;
   const pairs: ConversationPair[] = [];
+
   for (const comment of comments) {
+    if (isOurs(comment)) {
+      const parent = comment.parent_id ? byId.get(String(comment.parent_id)) : undefined;
+      const question = parent && !isOurs(parent) ? cleanText(parent.text) : "";
+      const answer = asAnswer(comment.text);
+      if (question && answer) pairs.push({ question, answer, source: "instagram-comment" });
+      continue;
+    }
     const question = cleanText(comment.text);
-    if (!question || String(comment.from?.id ?? "") === accountId) continue;
+    if (!question) continue;
     for (const reply of comment.replies?.data ?? []) {
-      const answer = cleanText(reply.text);
-      if (answer && String(reply.from?.id ?? "") === accountId) {
-        pairs.push({ question, answer, source: "instagram-comment" });
-      }
+      const answer = asAnswer(reply.text);
+      if (answer && isOurs(reply)) pairs.push({ question, answer, source: "instagram-comment" });
     }
   }
   return pairs;
@@ -65,7 +88,7 @@ export function ownMessagePairs(messages: MessageNode[], accountId: string): Con
     const text = cleanText(message.message);
     if (!text) continue;
     if (String(message.from?.id ?? "") === accountId) {
-      reply.push(text);
+      if (carriesWords(text)) reply.push(text);
       continue;
     }
     flush();

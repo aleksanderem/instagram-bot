@@ -40,7 +40,8 @@ async function probeShortLivedToken(token: string) {
   url.searchParams.set("fields", "id,username");
   url.searchParams.set("access_token", token);
   const response = await fetch(url);
-  console.log("DIAG /me probe", { status: response.status, body: (await response.text()).slice(0, 200) });
+  const body = (await response.text()).replaceAll(token, "<short-lived-token>").slice(0, 200);
+  console.log("DIAG /me probe", { status: response.status, body });
 }
 
 /**
@@ -68,16 +69,25 @@ async function exchangeForLongLivedToken(token: string) {
     }
   ];
 
+  const redact = (text: string) =>
+    text
+      .replaceAll(secret, "<secret>")
+      .replaceAll(token, "<short-lived-token>")
+      .replace(/"access_token"\s*:\s*"[^"]*"/g, '"access_token":"<redacted>"')
+      .replace(/(access_token|client_secret)=[^&\s"]+/g, "$1=<redacted>")
+      .replace(/\bIG[A-Za-z0-9_-]{20,}/g, "<token>");
+
   const failures: string[] = [];
   for (const variant of variants) {
     const response = await fetch(variant.url, variant.init as RequestInit);
     const text = await response.text();
-    console.log("DIAG long-lived variant", { variant: variant.name, status: response.status, body: text.slice(0, 200) });
     if (response.ok) {
-      console.log("DIAG WORKING VARIANT:", variant.name);
+      console.log("DIAG WORKING VARIANT:", variant.name, { status: response.status });
       return JSON.parse(text) as { access_token: string; user_id?: string };
     }
-    failures.push(`${variant.name} -> ${response.status} ${text.slice(0, 120)}`);
+    const safeBody = redact(text).slice(0, 200);
+    console.log("DIAG long-lived variant failed", { variant: variant.name, status: response.status, body: safeBody });
+    failures.push(`${variant.name} -> ${response.status} ${safeBody.slice(0, 120)}`);
   }
   throw new Error(`Meta token exchange failed: ${failures.join(" | ")}`);
 }
